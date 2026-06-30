@@ -14,6 +14,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { extractPCM16k, renderVerticalClip, probe } from './ffmpeg.ts'
 import { transcribePCM, type Segment } from './transcribe.ts'
+import { aura } from './aura.ts'
+import { narrate } from './narrate.ts'
+import { generateCover } from './images.ts'
 
 const DATA = process.env.DATA_DIR || join(process.cwd(), 'data')
 await mkdir(DATA, { recursive: true })
@@ -115,7 +118,16 @@ async function generateBatch(batchId: string, candidateIds: string[]) {
       await renderVerticalClip({ input, outMp4: file, startSec: c.startSec, endSec: c.endSec, aspect })
       assets[p] = `/files/${batch.sourceId}/clips/${c.candidateId}_${p}.mp4`
     }
-    batch.clips.push({ clipId: c.candidateId, title: c.summarySentence.slice(0, 48), durationSec: c.durationSec, startSec: c.startSec, endSec: c.endSec, status: 'draft', platformAssets: assets, summarySentence: c.summarySentence })
+    const narration = await narrate({
+      startSec: c.startSec, endSec: c.endSec, durationSec: c.durationSec,
+      compositeScore: c.compositeScore, primaryTopic: c.primaryTopic, transcriptExcerpt: c.transcriptExcerpt,
+    }, batch.platforms)
+    let coverUrl: string | undefined
+    try {
+      const cover = await generateCover({ input, outDir, atSec: c.startSec + 1, title: narration.title, topic: c.primaryTopic })
+      coverUrl = `/files/${batch.sourceId}/clips/${cover.split(/[\\/]/).pop()}`
+    } catch { /* cover optional */ }
+    batch.clips.push({ clipId: c.candidateId, title: narration.title, durationSec: c.durationSec, startSec: c.startSec, endSec: c.endSec, status: 'draft', platformAssets: assets, summarySentence: c.summarySentence, narration, coverUrl })
     batch.totalClipsGenerated = i + 1
     batch.progressPct = Math.round(((i + 1) / cands.length) * 100)
   }
@@ -173,6 +185,8 @@ app.get('/api/clips/v1/batches/:id', async (req, reply) => {
   if (!b) return reply.code(404).send({ error: { code: 'NOT_FOUND' } })
   return { batch: b }
 })
+
+app.get('/api/clips/v1/aura/stats', async () => ({ aura: aura.stats() }))
 
 // helpers
 function clamp(n: number) { return Math.max(0, Math.min(1, n)) }

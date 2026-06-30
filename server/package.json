@@ -8,6 +8,9 @@
     "dev": "node --import tsx/esm src/server.ts",
     "start": "node --import tsx/esm src/server.ts",
     "test:e2e": "node --import tsx/esm src/e2e.ts",
+    "test:aura": "node --import tsx/esm src/aura.test.ts",
+    "test:narrate": "node --import tsx/esm src/narrate.test.ts",
+    "test:images": "node --import tsx/esm src/images.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

@@ -114,6 +114,20 @@ export function renderVerticalClip(opts: {
   })
 }
 
+/** Grab a single JPG frame at `atSec` — the safe fallback cover. */
+export function extractFrame(input: string, outJpg: string, atSec: number): Promise<string> {
+  return new Promise(async (resolve, reject) => {
+    await ensureDir(outJpg)
+    ffmpeg(input)
+      .seekInput(Math.max(0, atSec))
+      .frames(1)
+      .outputOptions(['-q:v 3'])
+      .on('end', () => resolve(outJpg))
+      .on('error', reject)
+      .save(outJpg)
+  })
+}
+
 /** Probe duration/streams — used to validate uploads before queueing. */
 export function probe(input: string): Promise<{ durationSec: number; hasAudio: boolean; width?: number; height?: number }> {
   return new Promise((resolve, reject) => {
