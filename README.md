@@ -17,10 +17,19 @@ SHADDAI CLIPPER/
 └── docs/          ← design + integration docs
 ```
 
-## Quick start
+## Quick start (easiest — one click)
 
-You run **two processes**: the engine (backend) and the Vite dev UI (frontend).
-The engine is the only part required to clip videos; the UI is optional.
+**Double-click `START-CLIPPER.bat`.** It builds the app the first time, starts the
+engine (which also serves the UI), and opens `http://localhost:8787` in your
+browser. Drag in a video, get captioned vertical clips, download them. That's it.
+
+> One process, one URL. The engine serves both the API and the built UI, so you
+> don't need a separate frontend server for normal use.
+
+## Quick start (developers — two processes)
+
+For UI development with hot-reload you can run the engine and the Vite dev server
+separately. The engine is the only part required to clip videos; the dev UI is optional.
 
 ### 1. Engine (backend) — required
 

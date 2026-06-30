@@ -11,6 +11,7 @@ import multipart from '@fastify/multipart'
 import fstatic from '@fastify/static'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { extractPCM16k, renderVerticalClip, probe } from './ffmpeg.ts'
 import { transcribePCM, type Segment } from './transcribe.ts'
@@ -140,6 +141,21 @@ const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 * 1024 })
 await app.register(cors, { origin: true })
 await app.register(multipart, { limits: { fileSize: 4 * 1024 * 1024 * 1024 } })
 await app.register(fstatic, { root: DATA, prefix: '/files/' })
+
+// Serve the built frontend (dist/) so ONE process serves the whole app.
+// Only mounts if a production build exists — dev still uses the Vite server.
+const DIST = join(process.cwd(), '..', 'dist')
+const hasDist = existsSync(join(DIST, 'index.html'))
+if (hasDist) {
+  await app.register(fstatic, { root: DIST, prefix: '/', decorateReply: false })
+  // SPA fallback: send index.html for any non-API, non-file route (client routing).
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith('/api/') || req.url.startsWith('/files/')) {
+      return reply.code(404).send({ error: { code: 'NOT_FOUND' } })
+    }
+    return reply.sendFile('index.html', DIST)
+  })
+}
 
 app.get('/api/clips/v1/health', async () => ({ ok: true, engine: 'ffmpeg-static + transformers.js whisper' }))
 
