@@ -1,0 +1,230 @@
+@import "tailwindcss";
+
+/* ============================================================
+   SHADDAI CLIPS — "CUTTING ROOM"
+   A cinematic editorial edit-bay. Near-black cool canvas, a single
+   electric-lime render accent, film grain + vignette, timecode mono.
+   Dark is the hero; [data-theme="light"] is a refined daylight bay.
+   ============================================================ */
+
+@theme {
+  /* fonts */
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Sora', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* DARK (default) — the cutting room */
+  --color-primary: #00e5a0;            /* electric lime — "render / export" energy */
+  --color-primary-hover: #33ffd0;
+  --color-primary-light: #05261f;      /* deep olive-ink for active fills */
+  --color-primary-dark: #00b888;
+  --color-primary-foreground: #0a0e1a; /* near-black text on lime */
+
+  --color-secondary: #ff6b4a;          /* warm coral signal */
+  --color-secondary-light: #2a1610;
+
+  --color-success: #5ef2a4;
+  --color-success-light: #0f2a1e;
+  --color-danger: #ff5d5d;
+  --color-danger-light: #2a1414;
+  --color-warning: #ffc24b;
+  --color-warning-light: #2a2110;
+  --color-info: #5ad2ff;
+  --color-info-light: #0e2530;
+  --color-purple: #b794ff;
+  --color-purple-light: #1d1733;
+
+  --color-muted: #1a1d23;
+  --color-muted-foreground: #888e9b;
+  --color-border: #23262e;
+  --color-background: #0a0e1a;
+  --color-foreground: #f1f3f5;
+  --color-card: #131519;
+  --color-card-foreground: #f1f3f5;
+  --color-surface: #0e1013;
+
+  --radius: 0.75rem;
+}
+
+/* explicit dark (toggle sets data-theme="dark") — same as default */
+[data-theme="dark"] {
+  --color-primary: #00e5a0;
+  --color-primary-hover: #33ffd0;
+  --color-primary-light: #05261f;
+  --color-primary-dark: #00b888;
+  --color-primary-foreground: #0a0e1a;
+  --color-secondary: #ff6b4a;
+  --color-secondary-light: #2a1610;
+  --color-success: #5ef2a4;
+  --color-success-light: #0f2a1e;
+  --color-danger: #ff5d5d;
+  --color-danger-light: #2a1414;
+  --color-warning: #ffc24b;
+  --color-warning-light: #2a2110;
+  --color-info: #5ad2ff;
+  --color-info-light: #0e2530;
+  --color-purple: #b794ff;
+  --color-purple-light: #1d1733;
+  --color-muted: #1a1d23;
+  --color-muted-foreground: #888e9b;
+  --color-border: #23262e;
+  --color-background: #0a0e1a;
+  --color-foreground: #f1f3f5;
+  --color-card: #131519;
+  --color-card-foreground: #f1f3f5;
+  --color-surface: #0e1013;
+}
+
+/* DAYLIGHT bay — warm paper, lime stays the accent */
+[data-theme="light"] {
+  --color-primary: #5a7d00;            /* lime darkened for contrast on paper */
+  --color-primary-hover: #4a6800;
+  --color-primary-light: #eef7d6;
+  --color-primary-dark: #3d5600;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #d8410f;
+  --color-secondary-light: #ffe9e1;
+  --color-success: #0a8f5b;
+  --color-success-light: #d8f3e6;
+  --color-danger: #d83a3a;
+  --color-danger-light: #fde3e3;
+  --color-warning: #b87900;
+  --color-warning-light: #fbeecb;
+  --color-info: #0a7ea8;
+  --color-info-light: #d9f0fa;
+  --color-purple: #7a4fd6;
+  --color-purple-light: #ece3fb;
+  --color-muted: #f0eee9;
+  --color-muted-foreground: #6b6f78;
+  --color-border: #e6e2da;
+  --color-background: #faf9f6;
+  --color-foreground: #16181d;
+  --color-card: #ffffff;
+  --color-card-foreground: #16181d;
+  --color-surface: #f4f2ec;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  transition: background-color .25s, color .25s;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.011em;
+}
+
+/* Display face for headings — editorial weight */
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* ── Atmosphere: film grain + vignette over the whole canvas ── */
+body::before {
+  /* vignette — pulls focus to center like a viewfinder */
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(120% 120% at 50% 0%, transparent 55%, color-mix(in srgb, var(--color-background) 70%, #000) 100%);
+}
+body::after {
+  /* film grain */
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Scrollbar ── */
+.shaddai-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.shaddai-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.shaddai-scrollbar::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+.shaddai-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
+
+/* ── Keyframes ── */
+@keyframes fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slide-in-right { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes scale-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes pulse-soft { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes gradient-shift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+@keyframes rec-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+@keyframes scan { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+.animate-fade-in { animation: fade-in .45s cubic-bezier(.2,.7,.2,1) both; }
+.animate-slide-up { animation: slide-up .55s cubic-bezier(.2,.7,.2,1) both; }
+.animate-slide-in-right { animation: slide-in-right .3s ease-out both; }
+.animate-scale-in { animation: scale-in .3s ease-out both; }
+.animate-pulse-soft { animation: pulse-soft 2s ease-in-out infinite; }
+.animate-float { animation: float 3s ease-in-out infinite; }
+
+.shimmer {
+  background: linear-gradient(90deg, var(--color-muted) 25%, color-mix(in srgb, var(--color-muted) 50%, transparent) 50%, var(--color-muted) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* lime hairline gradient border */
+.gradient-border { position: relative; }
+.gradient-border::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--color-primary), transparent 60%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* accent text — lime wash, used for hero numerals/wordmark */
+.gradient-text {
+  background: linear-gradient(100deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 55%, var(--color-info)));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* card lift — cinematic glow on the accent */
+.card-hover { transition: transform .25s cubic-bezier(.2,.7,.2,1), box-shadow .25s, border-color .25s; }
+.card-hover:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+  box-shadow: 0 18px 40px -16px color-mix(in srgb, var(--color-primary) 22%, transparent),
+              0 6px 16px -8px rgba(0,0,0,.5);
+}
+
+/* timeline tick strip — a film-strip motif for headers/dividers */
+.film-strip {
+  background-image: repeating-linear-gradient(90deg,
+    var(--color-border) 0 1px, transparent 1px 14px);
+  height: 8px;
+  opacity: .5;
+}
+
+/* a sweeping scan highlight (use on processing surfaces) */
+.scan-line { position: relative; overflow: hidden; }
+.scan-line::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent);
+  animation: scan 2.2s ease-in-out infinite;
+}
+
+/* blinking REC dot */
+.rec-dot { animation: rec-blink 1.4s steps(1,end) infinite; }
+
+.stagger-1 { animation-delay: .04s; }
+.stagger-2 { animation-delay: .08s; }
+.stagger-3 { animation-delay: .12s; }
+.stagger-4 { animation-delay: .16s; }
+.stagger-5 { animation-delay: .20s; }
+.stagger-6 { animation-delay: .24s; }
+.stagger-7 { animation-delay: .28s; }
+.stagger-8 { animation-delay: .32s; }
