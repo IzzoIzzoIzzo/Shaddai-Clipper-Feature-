@@ -11,6 +11,7 @@
     "test:aura": "node --import tsx/esm src/aura.test.ts",
     "test:narrate": "node --import tsx/esm src/narrate.test.ts",
     "test:images": "node --import tsx/esm src/images.test.ts",
+    "test:clean": "node --import tsx/esm src/clean.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

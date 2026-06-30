@@ -18,6 +18,7 @@ import { transcribePCM, type Segment } from './transcribe.ts'
 import { aura } from './aura.ts'
 import { narrate } from './narrate.ts'
 import { generateCover } from './images.ts'
+import { dedupeText } from './clean.ts'
 
 const DATA = process.env.DATA_DIR || join(process.cwd(), 'data')
 await mkdir(DATA, { recursive: true })
@@ -65,19 +66,22 @@ function buildCandidates(segs: Segment[], max = 5): Candidate[] {
     return { w, signals: { linguistic, audio, sentiment, qa }, composite }
   })
   scored.sort((a, b) => b.composite - a.composite)
-  return scored.slice(0, max).map((r, i) => ({
+  return scored.slice(0, max).map((r, i) => {
+    const cleaned = dedupeText(r.w.text)
+    return {
     candidateId: randomUUID(),
     startSec: round1(r.w.startSec),
     endSec: round1(r.w.endSec),
     durationSec: round1(r.w.endSec - r.w.startSec),
     compositeScore: round2(r.composite),
     signals: { linguistic: round2(r.signals.linguistic), audio: round2(r.signals.audio), sentiment: round2(r.signals.sentiment), qa: round2(r.signals.qa) },
-    primaryTopic: topicOf(r.w.text),
-    summarySentence: r.w.text.length > 90 ? r.w.text.slice(0, 88) + '…' : r.w.text,
-    transcriptExcerpt: r.w.text,
+    primaryTopic: topicOf(cleaned),
+    summarySentence: cleaned.length > 90 ? cleaned.slice(0, 88) + '…' : cleaned,
+    transcriptExcerpt: cleaned,
     status: 'pending',
     clipIndex: i + 1,
-  }))
+    }
+  })
 }
 
 // ── async pipeline stages ──
