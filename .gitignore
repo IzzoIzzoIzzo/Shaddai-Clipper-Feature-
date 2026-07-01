@@ -3,3 +3,5 @@ dist/
 server/data/
 *.log
 .env
+server/_sid.txt
+_verify_out.mp4

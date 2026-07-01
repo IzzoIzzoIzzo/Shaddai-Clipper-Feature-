@@ -1,0 +1,36 @@
+# Render deployment for the SHADDAI Clipper (engine + built UI in one web service).
+# The engine binds process.env.PORT and serves the built dist/, so one service
+# hosts both the API (/api/clips/v1, /files) and the UI.
+#
+# Deploy: push this repo to GitHub, then in Render → New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: shaddai-clipper
+    runtime: node
+    plan: starter            # free tier (512MB) OOMs on Whisper — starter has 512MB→ use standard if you process long videos
+    region: oregon
+    branch: main
+    # build: install frontend deps, build dist/, install engine deps
+    buildCommand: npm install && npm run build && npm --prefix server install
+    # start: run the engine FROM server/ so it finds ../dist and ./data
+    startCommand: cd server && node --import tsx/esm src/server.ts
+    healthCheckPath: /api/clips/v1/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: WHISPER_MODEL
+        value: Xenova/whisper-tiny.en   # smallest/fastest; bump to base.en if you upgrade the plan
+      # Optional — enable AI covers + better narration (leave unset to run free/deterministic):
+      - key: HF_TOKEN
+        sync: false
+      - key: COVERS
+        value: "off"
+      # Optional — point narration at an LLM (else deterministic fallbacks):
+      - key: OPENAI_API_KEY
+        sync: false
+    # Persistent storage for rendered clips (optional; without it clips are download-now only).
+    # Uncomment to keep clips across restarts (paid add-on):
+    # disk:
+    #   name: clipper-data
+    #   mountPath: /opt/render/project/src/server/data
+    #   sizeGB: 5
