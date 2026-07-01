@@ -10,9 +10,10 @@ import cors from '@fastify/cors'
 import multipart from '@fastify/multipart'
 import fstatic from '@fastify/static'
 import { randomUUID } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdir, rm } from 'node:fs/promises'
+import { existsSync, createWriteStream } from 'node:fs'
+import { basename, join } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { extractPCM16k, renderVerticalClip, probe } from './ffmpeg.ts'
 import { transcribePCM, type Segment } from './transcribe.ts'
 import { aura } from './aura.ts'
@@ -141,9 +142,11 @@ async function generateBatch(batchId: string, candidateIds: string[]) {
 }
 
 // ── server ──
-const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 * 1024 })
+// Upload cap (env-tunable). Bounds memory/disk so a huge upload can't OOM the host.
+const MAX_UPLOAD_BYTES = (Number(process.env.MAX_UPLOAD_MB) || 1024) * 1024 * 1024
+const app = Fastify({ logger: false, bodyLimit: 1 * 1024 * 1024 }) // JSON bodies are tiny; video uses multipart
 await app.register(cors, { origin: true })
-await app.register(multipart, { limits: { fileSize: 4 * 1024 * 1024 * 1024 } })
+await app.register(multipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } })
 await app.register(fstatic, { root: DATA, prefix: '/files/' })
 
 // Serve the built frontend (dist/) so ONE process serves the whole app.
@@ -169,8 +172,15 @@ app.post('/api/clips/v1/sources', async (req, reply) => {
   const sourceId = randomUUID()
   const dir = join(DATA, sourceId)
   await mkdir(dir, { recursive: true })
-  const inputPath = join(dir, file.filename || 'source.mp4')
-  await writeFile(inputPath, await file.toBuffer())
+  // Sanitize client filename: basename strips any path, then restrict chars — prevents path traversal.
+  const safeName = (basename(file.filename || 'source.mp4').replace(/[^\w.\-]+/g, '_').slice(0, 120)) || 'source.mp4'
+  const inputPath = join(dir, safeName)
+  // Stream to disk bounded by the multipart fileSize limit — never buffer the whole upload in memory.
+  await pipeline(file.file, createWriteStream(inputPath))
+  if ((file.file as any).truncated) {
+    await rm(dir, { recursive: true, force: true })
+    return reply.code(413).send({ error: { code: 'FILE_TOO_LARGE', message: `file exceeds ${Math.round(MAX_UPLOAD_BYTES / 1048576)}MB limit` } })
+  }
   inputs.set(sourceId, inputPath)
   const src: Source = { sourceId, title: titleFrom(file.filename || 'Source'), originalFilename: file.filename || 'source.mp4', durationSec: 0, status: 'uploading', createdAt: new Date().toISOString() }
   sources.set(sourceId, src)
