@@ -1,131 +1,61 @@
-# SHADDAI Video Clipper
+<div align="center">
 
-Standalone tool that turns a long video into short, vertical (or wide), captioned
-clips. **Real pipeline, no mock:** it cuts and reframes with the bundled
-[`ffmpeg-static`](https://www.npmjs.com/package/ffmpeg-static) binary and
-transcribes with [Whisper via Transformers.js](https://www.npmjs.com/package/@huggingface/transformers)
-(pure JS/WASM + ONNX — no Python, no Redis, no system FFmpeg install).
+# 🎬 SHADDAI Clipper
 
-This project is **completely separate from the main SHADDAI dashboard.**
+### Long videos → captioned vertical shorts
 
-```
-SHADDAI CLIPPER/
-├── server/        ← the engine: Fastify + ffmpeg-static + Whisper  (this is what does the work)
-├── src/           ← React + Vite frontend (Cutting Room UI)
-├── index.html     ← Vite entry
-├── vite.config.ts ← dev server proxies /api/clips + /files → engine on :8787
-└── docs/          ← design + integration docs
-```
+*The Media Studio engine of [⚡ SHADDAI](https://github.com/IzzoIzzoIzzo/Shaddai)*
 
-## Quick start (easiest — one click)
+Drop in a long video; get back scroll-stopping, captioned 9:16 shorts — powered by
+**ffmpeg** + **Whisper** transcription. Real engine, no mock. One-click launch.
 
-**Double-click `START-CLIPPER.bat`.** It builds the app the first time, starts the
-engine (which also serves the UI), and opens `http://localhost:8787` in your
-browser. Drag in a video, get captioned vertical clips, download them. That's it.
+<br>
 
-> One process, one URL. The engine serves both the API and the built UI, so you
-> don't need a separate frontend server for normal use.
+[![License](https://img.shields.io/badge/license-MIT-00ff88?style=for-the-badge)](LICENSE)
+[![Engine](https://img.shields.io/badge/engine-ffmpeg%20·%20Whisper-00b4d8?style=for-the-badge)](#)
+[![Output](https://img.shields.io/badge/output-9:16%20shorts-9b5de5?style=for-the-badge)](#)
+[![SHADDAI](https://img.shields.io/badge/SHADDAI-Pro%20feature-f77f00?style=for-the-badge)](https://github.com/IzzoIzzoIzzo/Shaddai)
 
-## Quick start (developers — two processes)
+[**𝕏 @shaddaiAI**](https://x.com/shaddaiAI) · [**Built by @IzzoSol**](https://x.com/IzzoSol)
 
-For UI development with hot-reload you can run the engine and the Vite dev server
-separately. The engine is the only part required to clip videos; the dev UI is optional.
+</div>
 
-### 1. Engine (backend) — required
+---
+
+## ✦ What it does
+
+- **Transcribe** long-form video locally with Whisper (Transformers.js) — no cloud upload
+- **Cut** the best moments into vertical 9:16 clips with `ffmpeg-static`
+- **Caption** each short with burned-in, platform-native subtitles
+- **Narrate & cover** — optional agent narration + AI cover art (fallback-safe, no key needed)
+
+## ✦ Quickstart
 
 ```bash
-cd server
-npm install        # already installed; pulls the ffmpeg-static binary
-npm start          # → Fastify engine on http://localhost:8787
-                   # (or: npm run dev — same thing)
+# one click
+START-CLIPPER.bat            # → engine + UI at http://localhost:8787
 ```
 
-First successful boot prints:
+Or run the engine directly and open `http://localhost:8787`.
 
-```
-[clips] real engine on http://localhost:8787  (model loads on first upload)
-```
+## ✦ Inside SHADDAI
 
-> **First-run note:** the Whisper model (`Xenova/whisper-tiny.en`, ~40 MB)
-> downloads from the Hugging Face hub the **first time a video is transcribed**
-> (i.e. on the first `POST /sources`), then is cached on disk. Boot + health +
-> ffmpeg work happen without it.
+This is the engine behind SHADDAI's **Media → Video Clipper** module. Inside the platform it's
+tier-gated and metered; standalone here it's yours under MIT.
 
-### 2. Frontend UI (optional)
+---
 
-```bash
-# from the project root (not server/)
-npm install
-npm run dev        # → http://localhost:5173, proxies API calls to the engine
-```
+## ✦ The SHADDAI Family
 
-## Engine HTTP contract (mounted at `/api/clips/v1`, port `8787`)
+| Repo | What |
+|------|------|
+| **[Shaddai](https://github.com/IzzoIzzoIzzo/Shaddai)** | The sovereign AI agent empire — 7 agents, 5,000+ skills |
+| **[aura](https://github.com/IzzoIzzoIzzo/aura)** | Dependency-free LLM token-saver · CLI + MCP + library |
+| **[Shaddai-Clipper-Feature-](https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-)** | *(this)* long video → captioned vertical shorts |
 
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| GET  | `/api/clips/v1/health` | — | `{ ok, engine }` |
-| POST | `/api/clips/v1/sources` | `multipart/form-data`, field `file` (the video) | `{ sourceId, status: "uploading" }` |
-| GET  | `/api/clips/v1/sources` | — | `{ sources: Source[] }` |
-| GET  | `/api/clips/v1/sources/:id` | — | `{ source, transcript: Segment[], candidates: Candidate[] }` |
-| POST | `/api/clips/v1/generate` | `{ sourceId, candidateIds?, platforms? }` | `{ batchId, status: "queued" }` |
-| GET  | `/api/clips/v1/batches/:id` | — | `{ batch }` |
-| GET  | `/files/<sourceId>/clips/<clipId>_<platform>.mp4` | — | the rendered MP4 (static) |
+<div align="center">
+<br>
 
-**Async flow (clients poll):**
+**Built by [@IzzoSol](https://x.com/IzzoSol) · Follow [@shaddaiAI](https://x.com/shaddaiAI)** · MIT
 
-1. `POST /sources` with the video file → get a `sourceId`.
-2. Poll `GET /sources/:id` until `source.status === "ingested"`
-   (`uploading → normalizing → ingested | failed`). Now `candidates[]` are populated.
-3. `POST /generate { sourceId, candidateIds?, platforms? }` → get a `batchId`.
-   - `candidateIds` defaults to the top 3 detected highlights.
-   - `platforms` defaults to `["tiktok","reels"]`. Valid: `tiktok`, `reels`,
-     `youtube_shorts` (9:16) and `x`, `linkedin` (16:9).
-4. Poll `GET /batches/:id` until `batch.status === "reviewing"`.
-   Download URLs are in `batch.clips[].platformAssets[platform]`.
-
-### Environment vars
-
-| Var | Default | Purpose |
-|---|---|---|
-| `PORT` | `8787` | HTTP port |
-| `DATA_DIR` | `server/data` | where uploaded inputs + rendered clips are stored |
-| `WHISPER_MODEL` | `Xenova/whisper-tiny.en` | any Transformers.js Whisper model id |
-
-## Verify it works
-
-```bash
-cd server
-
-npm run typecheck   # tsc --noEmit — passes clean
-
-node smoke.mjs      # boots the engine, makes a synthetic clip with ffmpeg, then
-                    # drives the REAL HTTP flow: upload → poll → generate →
-                    # poll → fetch the rendered MP4. (Downloads Whisper model
-                    # on the transcribe step the first time.)
-
-npm run test:e2e    # builds testdata/test.mp4 from real speech, runs the actual
-                    # extract → Whisper → render path, asserts real words + a
-                    # >1KB MP4.
-```
-
-Quick manual check (engine running):
-
-```bash
-curl http://localhost:8787/api/clips/v1/health
-# → {"ok":true,"engine":"ffmpeg-static + transformers.js whisper"}
-```
-
-## Real end-to-end clip (manual)
-
-To produce a clip from one of your own videos:
-
-1. Start the engine (`cd server && npm start`).
-2. Upload: `curl -F "file=@/path/to/your_video.mp4" http://localhost:8787/api/clips/v1/sources`
-3. Poll `GET /api/clips/v1/sources/<sourceId>` until `status: "ingested"`
-   (the **first** transcribe downloads the ~40 MB Whisper model — allow a minute).
-4. `curl -X POST http://localhost:8787/api/clips/v1/generate -H "Content-Type: application/json" -d '{"sourceId":"<id>","platforms":["tiktok"]}'`
-5. Poll `GET /api/clips/v1/batches/<batchId>` until `status: "reviewing"`, then
-   download the MP4 at the `platformAssets` URL under `/files/...`.
-
-See [`server/README.md`](server/README.md) for architecture, security notes,
-and dashboard-embedding details.
+</div>
