@@ -49,7 +49,7 @@ tier-gated and metered; standalone here it's yours under MIT.
 
 | Repo | What |
 |------|------|
-| **[Shaddai](https://github.com/IzzoIzzoIzzo/Shaddai)** | The sovereign AI agent empire — 7 agents, 5,000+ skills |
+| **[Shaddai](https://github.com/IzzoIzzoIzzo/Shaddai)** | The sovereign AI agent empire — 7 agents, 200+ real tools |
 | **[aura](https://github.com/IzzoIzzoIzzo/aura)** | Dependency-free LLM token-saver · CLI + MCP + library |
 | **[Shaddai-Clipper-Feature-](https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-)** | *(this)* long video → captioned vertical shorts |
 
