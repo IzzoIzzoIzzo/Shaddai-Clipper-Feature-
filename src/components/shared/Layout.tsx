@@ -2,6 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import { ToastContainer } from '@/components/ui/toast'
+import { BootSequence } from '@/components/BootSequence'
 import {
   LayoutDashboard,
   Upload,
@@ -160,6 +161,7 @@ export function ClipsLayout() {
       </main>
 
       <ToastContainer />
+      <BootSequence />
     </div>
   )
 }
