@@ -5,3 +5,6 @@ server/data/
 .env
 server/_sid.txt
 _verify_out.mp4
+
+# local verification artifacts
+.shots/
