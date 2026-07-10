@@ -32,6 +32,7 @@ interface ClipsState {
 
   ensureSeeded: () => void          // → loads live sources + engine health
   loadSourceDetail: (sourceId: string) => void  // → fetch transcript + candidates on demand
+  loadBatch: (batchId: string) => void          // → fetch a batch + its clips on demand (reload/direct-nav)
   resumePipelines: () => void       // → re-arm polling for in-flight items
   uploadSource: (file: File) => Promise<string>
   importUrl: (url: string) => Promise<string>
@@ -135,6 +136,32 @@ export const useClipsStore = create<ClipsState>()(
           }))
           if (src.status === 'uploading' || src.status === 'normalizing') pollSource(sourceId, set, get)
         } catch { /* engine offline — page shows its empty state */ }
+      },
+
+      // Fetch a batch + its rendered clips on demand. s.batches and s.clips are
+      // NOT persisted, so on reload/direct-nav to /batches/:id the page would
+      // otherwise be blank ("batch not found"). Populates both + arms polling if
+      // still rendering.
+      loadBatch: async (batchId) => {
+        try {
+          const d = await jget('/batches/' + batchId)
+          const b = d.batch
+          if (!b) return
+          const batch: GenerationBatch = {
+            batchId: b.batchId, sourceId: b.sourceId,
+            totalClipsRequested: b.totalClipsRequested || 0, totalClipsGenerated: b.totalClipsGenerated || 0,
+            platforms: b.platforms || [], status: b.status, progressPct: b.progressPct || 0,
+            currentStage: b.currentStage || '', totalCostUsd: 0, aiTokensUsed: 0, processingDurationSec: 0,
+            clips: (b.clips || []).map((c: any) => ({ clipId: c.clipId, title: c.title, status: c.status || 'draft', durationSec: c.durationSec })),
+            createdAt: b.createdAt || new Date().toISOString(), completedAt: b.completedAt || null,
+          }
+          const fullClips = (b.clips || []).map((c: any) => mapClip(c, b.sourceId, batchId))
+          set((st) => ({
+            batches: st.batches.some((x) => x.batchId === batchId) ? st.batches.map((x) => (x.batchId === batchId ? batch : x)) : [batch, ...st.batches],
+            clips: [...fullClips, ...st.clips.filter((c) => c.batchId !== batchId)],
+          }))
+          if (b.status !== 'reviewing' && b.status !== 'completed' && b.status !== 'failed') pollBatch(batchId, set, get)
+        } catch { /* engine offline — page shows its not-found state */ }
       },
 
       resumePipelines: () => {

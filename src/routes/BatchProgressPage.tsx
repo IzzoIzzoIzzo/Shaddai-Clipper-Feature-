@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -592,7 +592,20 @@ export function BatchProgressPage() {
   const navigate = useNavigate()
 
   const batch = useClipsStore((s) => s.batches.find((b) => b.batchId === batchId))
-  const storeClips = useClipsStore((s) => s.clips.filter((c) => c.batchId === batchId))
+  // Select the stable array and filter in a memo. Filtering INSIDE the selector
+  // returns a new array every render → Zustand's useSyncExternalStore loops
+  // infinitely (React #185 "maximum update depth"), blanking the page.
+  const allClips = useClipsStore((s) => s.clips)
+  const storeClips = useMemo(() => allClips.filter((c) => c.batchId === batchId), [allClips, batchId])
+  const loadBatch = useClipsStore((s) => s.loadBatch)
+
+  // Hydrate the batch record + clips from the engine on mount. Without this,
+  // a reload / direct link to /batches/:id finds nothing in the (non-persisted)
+  // store and renders the "batch not found" state even though it rendered fine.
+  useEffect(() => {
+    if (batchId && !batch) loadBatch(batchId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId])
 
   // Local-hydrated clips: fetched directly from the engine when the store's s.clips
   // is empty for this batch (happens on page reload because s.clips is not persisted).
