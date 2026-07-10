@@ -93,13 +93,31 @@ export function TranscriptPanel({ sourceId, segments }: TranscriptPanelProps) {
       ...s,
       text: drafts[s.id] ?? s.text,
     }))
+    // updateTranscript does an optimistic local update then fires the PATCH
+    // best-effort (it swallows engine errors internally). To detect a real
+    // HTTP failure we also fire our own PATCH and catch it; if it throws we
+    // keep the local copy (already applied) but surface the error banner.
+    // The store's PATCH runs in parallel — two identical calls is harmless.
     try {
       await updateTranscript(sourceId, updated)
+      // Verify the engine accepted the payload by re-firing the PATCH directly.
+      // We use a non-throwing best-effort check; if the engine is offline the
+      // optimistic local update still stands (consistent with store behaviour).
+      const res = await fetch(`/api/clips/v1/sources/${sourceId}/transcript`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          segments: updated.map((s) => ({ startSec: s.startSec, endSec: s.endSec, text: s.text })),
+        }),
+      })
+      if (!res.ok) throw new Error(`Engine returned ${res.status}`)
       setSavedAt(new Date())
       setEditMode(false)
       setDrafts({})
-    } catch {
-      setSaveError('Save failed — changes are kept locally.')
+    } catch (err) {
+      // Local copy is already updated via the optimistic store write above.
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setSaveError(`Save failed (${msg}) — changes are kept locally until you reload.`)
     } finally {
       setSaving(false)
     }
@@ -322,8 +340,9 @@ export function TranscriptPanel({ sourceId, segments }: TranscriptPanelProps) {
                       {formatDuration(seg.endSec)}
                     </span>
 
-                    {/* confidence warning dot */}
-                    {seg.confidence < 0.8 && (
+                    {/* confidence warning dot — only when confidence is a
+                        valid number below threshold (guards stale/missing data) */}
+                    {typeof seg.confidence === 'number' && !Number.isNaN(seg.confidence) && seg.confidence < 0.8 && (
                       <span className="mt-1 font-mono text-[9px] text-warning/80 tabular-nums">
                         {(seg.confidence * 100).toFixed(0)}%
                       </span>
@@ -345,7 +364,7 @@ export function TranscriptPanel({ sourceId, segments }: TranscriptPanelProps) {
                           {seg.emotion}
                         </Badge>
                       )}
-                      {seg.topics.slice(0, 2).map((t) => (
+                      {(Array.isArray(seg.topics) ? seg.topics : []).slice(0, 2).map((t) => (
                         <Badge key={t} variant="info" size="sm">{t}</Badge>
                       ))}
                       {isEdited && (

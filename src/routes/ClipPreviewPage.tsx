@@ -552,15 +552,7 @@ export function ClipPreviewPage() {
   const navigate = useNavigate()
   const clip = useClipsStore((s) => s.clips.find((c) => c.clipId === clipId))
 
-  const resolvedPlatform = platform ?? 'tiktok'
-  const isVertical = VERTICAL_PLATFORMS.has(resolvedPlatform)
-  const meta = PLATFORM_META[resolvedPlatform] ?? PLATFORM_META['tiktok']!
-
-  // Get the asset URL for this platform
-  const platformAsset = clip?.platformAssets[resolvedPlatform]
-  const videoSrc = platformAsset?.videoUrl ?? undefined
-
-  // Which platforms have assets
+  // Which platforms have assets (ordered by PLATFORMS constant for consistency)
   const availablePlatforms = clip
     ? Object.entries(clip.platformAssets)
         .filter(([, a]) => !!a?.videoUrl)
@@ -571,6 +563,29 @@ export function ClipPreviewPage() {
   const platformsWithAssets = PLATFORMS
     .filter((p) => p.id !== 'email' && availablePlatforms.includes(p.id))
     .map((p) => p.id as string)
+
+  // If the URL names a platform with no asset, silently redirect to the first
+  // platform that does have one. This prevents the user landing on an empty
+  // phone frame with no explanation.
+  const firstAvailable = platformsWithAssets[0] ?? 'tiktok'
+  const resolvedPlatform = (platform && availablePlatforms.includes(platform))
+    ? platform
+    : firstAvailable
+
+  // Redirect when the param platform doesn't match the resolved one
+  useEffect(() => {
+    if (!clip) return
+    if (platform !== resolvedPlatform) {
+      navigate(`/clips/clips/${clipId ?? ''}/preview/${resolvedPlatform}`, { replace: true })
+    }
+  }, [clip, platform, resolvedPlatform, clipId, navigate])
+
+  const isVertical = VERTICAL_PLATFORMS.has(resolvedPlatform)
+  const meta = PLATFORM_META[resolvedPlatform] ?? PLATFORM_META['tiktok']!
+
+  // Get the asset URL for this platform
+  const platformAsset = clip?.platformAssets[resolvedPlatform]
+  const videoSrc = platformAsset?.videoUrl ?? undefined
 
   const currentIndex = platformsWithAssets.indexOf(resolvedPlatform)
 
@@ -606,7 +621,10 @@ export function ClipPreviewPage() {
   }
 
   const caption = platformAsset?.caption ?? platformAsset?.postBody ?? clip.captions.primary
-  const scorePercent = Math.round(clip.compositeScore * 100)
+  // Guard against NaN if compositeScore is missing before the full clip object arrives
+  const scorePercent = Number.isFinite(clip.compositeScore)
+    ? Math.round(clip.compositeScore * 100)
+    : 0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const coverUrl: string | undefined = (clip as any).coverUrl
 
@@ -666,7 +684,7 @@ export function ClipPreviewPage() {
         <PlatformStrip
           active={resolvedPlatform}
           availablePlatforms={availablePlatforms}
-          clipId={clipId!}
+          clipId={clipId ?? ''}
         />
       </div>
 

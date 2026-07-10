@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Play, Pause, Download, Eye, Star,
@@ -203,7 +203,15 @@ export function ClipEditorPage() {
   const rateClip = useClipsStore((s) => s.rateClip)
   const enqueueExport = useClipsStore((s) => s.enqueueExport)
 
-  const [activePlatform, setActivePlatform] = useState<string>(PLATFORMS[0].id)
+  // Derive the first platform that actually has a rendered asset — used to seed
+  // activePlatform so the player never opens on a blank "No asset" state.
+  const firstPlatformWithAsset = useMemo(
+    () => PLATFORMS.find((p) => !!clip?.platformAssets[p.id]?.videoUrl)?.id ?? PLATFORMS[0].id,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [clip?.clipId]
+  )
+
+  const [activePlatform, setActivePlatform] = useState<string>(firstPlatformWithAsset)
   const [title, setTitle] = useState(clip?.title ?? '')
   const [primaryCaption, setPrimaryCaption] = useState(clip?.captions.primary ?? '')
   const [secondaryCaption, setSecondaryCaption] = useState(clip?.captions.secondary ?? '')
@@ -213,6 +221,12 @@ export function ClipEditorPage() {
   const [selectedHook, setSelectedHook] = useState<string | null>(
     clip?.hooks ? Object.keys(clip.hooks).find(k => !!clip.hooks[k as keyof typeof clip.hooks]) ?? null : null
   )
+
+  // When a different clip is loaded (e.g. navigating between clips), sync the
+  // active platform to one that has an asset rather than keeping stale state.
+  useEffect(() => {
+    setActivePlatform(firstPlatformWithAsset)
+  }, [firstPlatformWithAsset])
 
   // ── Empty state
   if (!clip) {
@@ -235,11 +249,14 @@ export function ClipEditorPage() {
   }
 
   // ── Derived
-  const firstPlatformWithAsset = PLATFORMS.find((p) => !!clip.platformAssets[p.id])?.id ?? PLATFORMS[0].id
   const resolvedPlatform = activePlatform
   const asset = clip.platformAssets[resolvedPlatform]
   const videoSrc = asset?.videoUrl ?? undefined
-  const scorePercent = Math.round(clip.compositeScore * 100)
+  // Guard against NaN if compositeScore arrives as undefined/0 before the
+  // full clip object is populated by the batch poller.
+  const scorePercent = Number.isFinite(clip.compositeScore)
+    ? Math.round(clip.compositeScore * 100)
+    : 0
   const hooks = clip.hooks as Record<string, string | undefined>
   const hookEntries = Object.entries(hooks).filter(([, v]) => !!v) as [string, string][]
 

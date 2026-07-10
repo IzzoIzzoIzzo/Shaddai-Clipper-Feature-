@@ -101,15 +101,29 @@ export function CandidateReviewPage() {
   const setCandidateSelection = useClipsStore((s) => s.setCandidateSelection)
   const loadSourceDetail = useClipsStore((s) => s.loadSourceDetail)
 
-  // Fetch candidates on mount (covers direct nav / reload).
-  useEffect(() => { if (sourceId) loadSourceDetail(sourceId) }, [sourceId, loadSourceDetail])
-
-  const [selected, setSelected] = useState<string[]>(
-    () => candidates.slice(0, 3).map((c) => c.candidateId)
-  )
+  // Bug fix: useState initializer runs before loadSourceDetail resolves, so
+  // candidates is always [] at construction time. Initialize to empty and seed
+  // top-3 once the first non-empty batch of candidates arrives.
+  const [selected, setSelected] = useState<string[]>([])
+  const [seededSelection, setSeededSelection] = useState(false)
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tiktok', 'reels', 'x'])
   const [burnCaptions, setBurnCaptions] = useState(false)
   const [generating, setGenerating] = useState(false)
+
+  // Fetch candidates on mount (covers direct nav / reload).
+  useEffect(() => { if (sourceId) loadSourceDetail(sourceId) }, [sourceId, loadSourceDetail])
+
+  // Seed top-3 selection once candidates arrive (runs only once per page load).
+  useEffect(() => {
+    if (!seededSelection && candidates.length > 0) {
+      const top3 = [...candidates]
+        .sort((a, b) => b.compositeScore - a.compositeScore)
+        .slice(0, 3)
+        .map((c) => c.candidateId)
+      setSelected(top3)
+      setSeededSelection(true)
+    }
+  }, [candidates, seededSelection])
 
   // ── helpers ──────────────────────────────────────────────
   const toggleCandidate = (id: string) =>
@@ -253,7 +267,8 @@ export function CandidateReviewPage() {
                   Target Platforms
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {PLATFORMS.map((p) => (
+                  {/* Filter out 'email' — it has no aspectRatio and is not a video clip platform */}
+                  {PLATFORMS.filter((p) => p.aspectRatio !== null).map((p) => (
                     <PlatformPill
                       key={p.id}
                       id={p.id}

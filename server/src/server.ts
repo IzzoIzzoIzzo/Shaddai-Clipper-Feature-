@@ -300,6 +300,15 @@ app.patch('/api/clips/v1/sources/:id/transcript', async (req, reply) => {
   return { ok: true, segments: updated.length }
 })
 
+// Delete a source + its files (so the UI delete actually sticks across reloads).
+app.delete('/api/clips/v1/sources/:id', async (req, reply) => {
+  const { id } = req.params as { id: string }
+  if (!sources.has(id)) return reply.code(404).send({ error: { code: 'NOT_FOUND' } })
+  sources.delete(id); transcripts.delete(id); candidates.delete(id); inputs.delete(id)
+  try { await rm(join(DATA, id), { recursive: true, force: true }) } catch { /* best effort */ }
+  return { ok: true }
+})
+
 app.post('/api/clips/v1/generate', async (req, reply) => {
   const body = (req.body || {}) as { sourceId?: string; candidateIds?: string[]; platforms?: string[] }
   if (!body.sourceId || !sources.get(body.sourceId)) return reply.code(400).send({ error: { code: 'BAD_SOURCE' } })

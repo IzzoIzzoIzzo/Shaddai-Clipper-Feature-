@@ -1,6 +1,5 @@
-import { useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { Film, Scissors, Clock, Upload, ChevronRight, Clapperboard } from 'lucide-react'
+import { Film, Scissors, Clock, Upload, ChevronRight, Clapperboard, WifiOff } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,7 +13,7 @@ import type { Source } from '@/types/api'
 function statusVariant(status: Source['status']): 'success' | 'danger' | 'info' | 'warning' {
   if (status === 'ingested') return 'success'
   if (status === 'failed') return 'danger'
-  if (status === 'normalizing') return 'warning'
+  if (status === 'normalizing' || status === 'normalized') return 'warning'
   return 'info'
 }
 
@@ -133,15 +132,17 @@ export function DashboardPage() {
   const sources = useClipsStore((s) => s.sources)
   const clips = useClipsStore((s) => s.clips)
   const batches = useClipsStore((s) => s.batches)
-  const ensureSeeded = useClipsStore((s) => s.ensureSeeded)
-
-  useEffect(() => {
-    ensureSeeded()
-  }, [ensureSeeded])
+  const engineOnline = useClipsStore((s) => s.engineOnline)
+  // ensureSeeded is already called by App.tsx on mount — no need to call again here.
 
   // derived stats
   const totalSources = sources.length
-  const totalClips = batches.reduce((acc, b) => acc + b.totalClipsGenerated, 0) + clips.length
+  // clips[] in the store is the full Clip objects populated from batch polling —
+  // the same items that batches[].totalClipsGenerated counts. Use clips.length
+  // as the single source of truth to avoid double-counting.
+  const totalClips = clips.length > 0
+    ? clips.length
+    : batches.reduce((acc, b) => acc + b.totalClipsGenerated, 0)
   const totalSecProcessed = sources.reduce((acc, src) => acc + (src.durationSec ?? 0), 0)
 
   // format processed time: prefer minutes if ≥60s, else seconds
@@ -158,6 +159,16 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-10 max-w-6xl">
+
+      {/* ── ENGINE OFFLINE BANNER ───────────────────────────────────────── */}
+      {engineOnline === false && (
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border border-danger/20 bg-danger-light animate-fade-in">
+          <WifiOff className="w-3.5 h-3.5 text-danger shrink-0" />
+          <span className="font-mono text-[11px] text-danger tracking-widest">
+            ENGINE OFFLINE — Showing cached data. Start the server to process new sources.
+          </span>
+        </div>
+      )}
 
       {/* ── HERO HEADER ─────────────────────────────────────────────────── */}
       <header className="animate-fade-in">

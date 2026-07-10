@@ -161,6 +161,8 @@ export const useClipsStore = create<ClipsState>()(
 
       deleteSource: (sourceId) => {
         if (sourceTimers[sourceId]) { clearInterval(sourceTimers[sourceId]); delete sourceTimers[sourceId] }
+        // Persist the delete on the engine so it doesn't reappear after reload.
+        fetch(API + '/sources/' + sourceId, { method: 'DELETE' }).catch(() => { /* local removal already applied */ })
         set((st) => {
           const { [sourceId]: _t, ...transcripts } = st.transcripts
           const { [sourceId]: _c, ...candidates } = st.candidates

@@ -146,6 +146,7 @@ export function UploadPage() {
       const id = await uploadSource(file)
       setSourceId(id)
       setUploaded(true)
+      setUploading(false)
       addToast({
         type: 'success',
         title: 'Intake complete',
@@ -506,7 +507,6 @@ export function UploadPage() {
             <button
               type="button"
               onClick={handleUrlComingSoon}
-              disabled
               className="shrink-0 font-mono text-[10px] tracking-[0.15em] text-muted-foreground uppercase border border-border rounded px-2.5 py-1 pointer-events-auto cursor-not-allowed hover:border-muted-foreground/40 transition-colors"
               aria-label="URL import coming soon"
             >

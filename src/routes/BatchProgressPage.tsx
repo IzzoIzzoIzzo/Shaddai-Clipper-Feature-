@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,37 @@ import {
 } from 'lucide-react'
 import { useClipsStore } from '@/stores/clipsStore'
 import type { Clip } from '@/types/api'
+
+const API = '/api/clips/v1'
+
+// Normalize a raw engine clip (platformAssets may be string URLs or {videoUrl} objects)
+// into the store's Clip shape so download buttons can read .videoUrl.
+function hydrateClip(c: any, sourceId: string, batchId: string): Clip {
+  const platformAssets: Record<string, { videoUrl?: string }> = {}
+  for (const [p, v] of Object.entries(c.platformAssets || {})) {
+    platformAssets[p] = typeof v === 'string' ? { videoUrl: v as string } : (v as any)
+  }
+  const narr = c.narration || {}
+  return {
+    clipId: c.clipId,
+    sourceId,
+    batchId,
+    userRating: null,
+    title: c.title || 'Clip',
+    startSec: c.startSec || 0,
+    endSec: c.endSec || 0,
+    durationSec: c.durationSec || 0,
+    compositeScore: c.compositeScore || 0,
+    hooks: narr.hook ? { curiosity: narr.hook } : {},
+    captions: { primary: narr.caption || c.summarySentence || '', secondary: '' },
+    hashtags: { core: narr.hashtags || [], niche: [], brand: [] },
+    platformAssets,
+    coverUrl: c.coverUrl,
+    status: (c.status as Clip['status']) || 'draft',
+    createdAt: c.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -560,7 +592,38 @@ export function BatchProgressPage() {
   const navigate = useNavigate()
 
   const batch = useClipsStore((s) => s.batches.find((b) => b.batchId === batchId))
-  const fullClips = useClipsStore((s) => s.clips.filter((c) => c.batchId === batchId))
+  const storeClips = useClipsStore((s) => s.clips.filter((c) => c.batchId === batchId))
+
+  // Local-hydrated clips: fetched directly from the engine when the store's s.clips
+  // is empty for this batch (happens on page reload because s.clips is not persisted).
+  const [hydratedClips, setHydratedClips] = useState<Clip[]>([])
+
+  useEffect(() => {
+    if (!batchId) return
+    // Only fetch if we have no full clips in the store yet for this batch.
+    if (storeClips.length > 0) return
+    let cancelled = false
+    async function fetchBatch() {
+      try {
+        const res = await fetch(`${API}/batches/${batchId}`)
+        if (!res.ok || cancelled) return
+        const d = await res.json()
+        const b = d.batch
+        if (!b || !b.clips?.length) return
+        const mapped = (b.clips as any[]).map((c) => hydrateClip(c, b.sourceId, batchId!))
+        if (!cancelled) setHydratedClips(mapped)
+      } catch {
+        // engine offline — leave hydratedClips empty
+      }
+    }
+    fetchBatch()
+    return () => { cancelled = true }
+  // Re-run only when batchId changes or storeClips goes from 0 → populated
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchId, storeClips.length])
+
+  // Prefer live store clips (populated by the poller); fall back to one-shot hydrated clips.
+  const fullClips = storeClips.length > 0 ? storeClips : hydratedClips
 
   // Not found
   if (!batch) {

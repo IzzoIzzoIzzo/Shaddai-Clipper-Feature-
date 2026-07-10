@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Sparkles, FileVideo, Loader2, FolderOpen,
@@ -41,9 +41,21 @@ export function SourceDetailPage() {
   const segments = useClipsStore((s) => (sourceId ? s.transcripts[sourceId] : undefined)) ?? []
   const loadSourceDetail = useClipsStore((s) => s.loadSourceDetail)
 
+  // Track whether the initial loadSourceDetail fetch has settled so we don't
+  // flash "No transcript available yet" while data is still in-flight.
+  const [detailLoading, setDetailLoading] = useState(true)
+
   // Fetch transcript + candidates on mount (covers direct nav / reload where the
   // upload poller never ran, so the transcript panel isn't empty).
-  useEffect(() => { if (sourceId) loadSourceDetail(sourceId) }, [sourceId, loadSourceDetail])
+  useEffect(() => {
+    if (!sourceId) { setDetailLoading(false); return }
+    setDetailLoading(true)
+    // loadSourceDetail is async but its type is declared void; cast to Promise to
+    // await completion and clear the loading flag regardless of outcome.
+    Promise.resolve((loadSourceDetail as (id: string) => Promise<void>)(sourceId))
+      .catch(() => { /* engine offline — proceed to empty state */ })
+      .finally(() => setDetailLoading(false))
+  }, [sourceId, loadSourceDetail])
 
   // ── Back nav ──
   const BackLink = () => (
@@ -71,7 +83,10 @@ export function SourceDetailPage() {
 
   const processing = source.status === 'uploading' || source.status === 'normalizing'
   const failed = source.status === 'failed'
+  // Only consider transcript absent once the initial fetch has settled; avoids
+  // a false "No transcript" flash on direct navigation / reload.
   const hasTranscript = segments.length > 0
+  const transcriptLoading = detailLoading && !hasTranscript
 
   // ─────────────────────────────────────────────────────────────
   // PROCESSING STATE — scan-line console
@@ -284,8 +299,21 @@ export function SourceDetailPage() {
               <TranscriptPanel sourceId={sourceId!} segments={segments} />
             </div>
           </div>
+        ) : transcriptLoading ? (
+          /* loading state — initial fetch in-flight; prevents false "No transcript" flash */
+          <div className={cn(
+            'rounded-2xl border border-dashed border-border bg-card/50',
+            'p-16 text-center'
+          )}>
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-muted mb-4 mx-auto">
+              <Loader2 className="h-5 w-5 text-muted-foreground/40 animate-spin" />
+            </div>
+            <p className="text-sm text-muted-foreground font-mono">
+              Loading transcript…
+            </p>
+          </div>
         ) : (
-          /* empty transcript state */
+          /* empty transcript state — fetch settled, genuinely no data */
           <div className={cn(
             'rounded-2xl border border-dashed border-border bg-card/50',
             'p-16 text-center'
