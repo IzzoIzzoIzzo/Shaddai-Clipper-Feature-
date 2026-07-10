@@ -3,40 +3,31 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
 import { ToastContainer } from '@/components/ui/toast'
 import { BootSequence } from '@/components/BootSequence'
+import { ThemePicker } from '@/components/ThemePicker'
+import { CreditsPill } from '@/components/CreditsPill'
 import {
   LayoutDashboard,
   Upload,
   FolderOpen,
+  Images,
   Send,
   Settings,
   ChevronLeft,
   ChevronRight,
-  Sun,
-  Moon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
 
 const navItems = [
   { to: '/clips', icon: LayoutDashboard, label: 'Dashboard', end: true, code: '01' },
   { to: '/clips/upload', icon: Upload, label: 'Upload Source', code: '02' },
   { to: '/clips/sources', icon: FolderOpen, label: 'Sources', code: '03' },
-  { to: '/clips/export-queue', icon: Send, label: 'Export Queue', code: '04' },
-  { to: '/clips/settings', icon: Settings, label: 'Brand Profiles', code: '05' },
+  { to: '/clips/gallery', icon: Images, label: 'Gallery', code: '04' },
+  { to: '/clips/export-queue', icon: Send, label: 'Export Queue', code: '05' },
+  { to: '/clips/settings', icon: Settings, label: 'Brand Profiles', code: '06' },
 ]
 
 export function ClipsLayout() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
   const location = useLocation()
-  const [dark, setDark] = useState(() => {
-    const stored = localStorage.getItem('shaddai-theme')
-    if (stored) return stored === 'dark'
-    return !window.matchMedia('(prefers-color-scheme: light)').matches // default to dark
-  })
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
-    localStorage.setItem('shaddai-theme', dark ? 'dark' : 'light')
-  }, [dark])
 
   const currentPage = navItems.find(
     (item) => (item.end ? location.pathname === item.to : location.pathname.startsWith(item.to))
@@ -142,13 +133,8 @@ export function ClipsLayout() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setDark(!dark)}
-              className="text-muted-foreground hover:text-foreground p-2 rounded-lg hover:bg-muted transition-colors"
-              title="Toggle theme"
-            >
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <CreditsPill />
+            <ThemePicker />
             <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold font-display">
               U
             </div>

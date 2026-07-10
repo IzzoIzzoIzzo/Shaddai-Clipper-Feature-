@@ -104,6 +104,70 @@
   --color-surface: #f4f2ec;
 }
 
+/* ============================================================
+   ARCADE / CARTOON-PENCIL — paper-cream canvas, ink outlines,
+   hot-pink + teal poppy accents, rounded chunky Baloo type.
+   ============================================================ */
+[data-theme="arcade"] {
+  --font-display: 'Baloo 2', 'Sora', sans-serif;
+  --font-sans: 'Baloo 2', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-primary: #ff2e63; --color-primary-hover: #ff5480; --color-primary-light: #ffe0ea; --color-primary-dark: #d81b52; --color-primary-foreground: #ffffff;
+  --color-secondary: #00c2b8; --color-secondary-light: #d3fbf7;
+  --color-success: #12b76a; --color-success-light: #d3f8e4;
+  --color-danger: #ff4d4d; --color-danger-light: #ffe0e0;
+  --color-warning: #ffab00; --color-warning-light: #fff0cf;
+  --color-info: #3d7bff; --color-info-light: #dbe7ff;
+  --color-purple: #9b5de5; --color-purple-light: #efe3fb;
+  --color-muted: #fbeede; --color-muted-foreground: #6b5e50;
+  --color-border: #1b1b2b;          /* dark ink = cartoon outline */
+  --color-background: #fff7ea; --color-foreground: #1b1b2b;
+  --color-card: #ffffff; --color-card-foreground: #1b1b2b; --color-surface: #fff1db;
+  --radius: 1rem;
+}
+
+/* ============================================================
+   ABSTRACT GALLERY — luminous gallery wall, electric-violet +
+   magenta, aurora wash, airy negative space.
+   ============================================================ */
+[data-theme="gallery"] {
+  --font-display: 'Bricolage Grotesque', 'Sora', sans-serif;
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-primary: #6d5efc; --color-primary-hover: #8676ff; --color-primary-light: #e7e3ff; --color-primary-dark: #5546e0; --color-primary-foreground: #ffffff;
+  --color-secondary: #ff4d9d; --color-secondary-light: #ffe1ee;
+  --color-success: #10b981; --color-success-light: #d5f5ea;
+  --color-danger: #ef4459; --color-danger-light: #fde0e4;
+  --color-warning: #f59e0b; --color-warning-light: #fdeecb;
+  --color-info: #06b6d4; --color-info-light: #d2f4f9;
+  --color-purple: #a855f7; --color-purple-light: #eee0fd;
+  --color-muted: #eeecf7; --color-muted-foreground: #6a6780;
+  --color-border: #e3dff0; --color-background: #f6f4fb; --color-foreground: #17151f;
+  --color-card: #ffffff; --color-card-foreground: #17151f; --color-surface: #efecf8;
+  --radius: 0.9rem;
+}
+
+/* ============================================================
+   LUXURY EDITORIAL — cream stock, gold + oxblood, Fraunces
+   serif display, hairline rules, restrained and expensive.
+   ============================================================ */
+[data-theme="luxury"] {
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-sans: 'Sora', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-primary: #b8892b; --color-primary-hover: #cf9d38; --color-primary-light: #f2e6cb; --color-primary-dark: #997019; --color-primary-foreground: #1c1a17;
+  --color-secondary: #7b2d26; --color-secondary-light: #f1dbd6;
+  --color-success: #4d7c4a; --color-success-light: #e0ecd9;
+  --color-danger: #a3352e; --color-danger-light: #f3ded9;
+  --color-warning: #a9791f; --color-warning-light: #f2e6cb;
+  --color-info: #3a6b7a; --color-info-light: #dcebef;
+  --color-purple: #6d5484; --color-purple-light: #e9e1f0;
+  --color-muted: #ece4d4; --color-muted-foreground: #6d6455;
+  --color-border: #e0d6c2; --color-background: #f5f0e4; --color-foreground: #1c1a17;
+  --color-card: #fcf8ef; --color-card-foreground: #1c1a17; --color-surface: #efe7d6;
+  --radius: 0.4rem;
+}
+
 body {
   font-family: var(--font-sans);
   background-color: var(--color-background);
@@ -140,6 +204,43 @@ body::after {
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+
+/* ── Per-theme atmosphere overrides ── */
+/* ARCADE: no dark vignette (paper); a printed halftone dot texture. */
+[data-theme="arcade"] body::before {
+  background: radial-gradient(120% 120% at 50% 0%, transparent 72%, color-mix(in srgb, var(--color-primary) 8%, transparent) 100%);
+}
+[data-theme="arcade"] body::after {
+  opacity: .5; mix-blend-mode: normal;
+  background-image: radial-gradient(color-mix(in srgb, var(--color-foreground) 12%, transparent) 1.4px, transparent 1.6px);
+  background-size: 20px 20px;
+}
+/* Cartoon "sticker" offset shadow + ink outline on lifted cards. */
+[data-theme="arcade"] .card-hover:hover {
+  transform: translate(-2px, -2px);
+  border-color: var(--color-foreground);
+  box-shadow: 6px 6px 0 0 var(--color-foreground);
+}
+[data-theme="arcade"] h1, [data-theme="arcade"] h2, [data-theme="arcade"] h3 { letter-spacing: -.01em; }
+
+/* GALLERY: aurora wash instead of vignette; grain nearly gone. */
+[data-theme="gallery"] body::before {
+  background:
+    radial-gradient(70% 45% at 22% 0%, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%),
+    radial-gradient(60% 40% at 88% 6%, color-mix(in srgb, var(--color-secondary) 18%, transparent), transparent 70%),
+    radial-gradient(60% 55% at 60% 100%, color-mix(in srgb, var(--color-info) 14%, transparent), transparent 72%);
+}
+[data-theme="gallery"] body::after { opacity: .02; }
+[data-theme="gallery"] .card-hover:hover {
+  box-shadow: 0 20px 50px -20px color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+
+/* LUXURY: warm soft vignette + faint multiply grain. */
+[data-theme="luxury"] body::before {
+  background: radial-gradient(125% 125% at 50% 0%, transparent 58%, color-mix(in srgb, #3a2b12 20%, transparent) 100%);
+}
+[data-theme="luxury"] body::after { opacity: .03; mix-blend-mode: multiply; }
+[data-theme="luxury"] h1, [data-theme="luxury"] h2, [data-theme="luxury"] h3 { letter-spacing: -.005em; }
 
 /* ── Scrollbar ── */
 .shaddai-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }

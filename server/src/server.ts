@@ -138,26 +138,50 @@ function selectDiverse<T extends { w: Segment; composite: number }>(scored: T[],
   return picked
 }
 
+// ── concurrency gate ──────────────────────────────────────────────
+// Whisper + ffmpeg are CPU-bound; running many at once melts the host. Cap the
+// number of simultaneous heavy jobs (transcribe/render) and queue the rest, so
+// a burst of users degrades gracefully — they wait in line instead of crashing
+// the process. Tune with MAX_JOBS (default 2).
+const MAX_JOBS = Number(process.env.MAX_JOBS) || 2
+let activeJobs = 0
+const jobQueue: Array<() => void> = []
+function acquireSlot(): Promise<void> {
+  if (activeJobs < MAX_JOBS) { activeJobs++; return Promise.resolve() }
+  return new Promise((resolve) => jobQueue.push(resolve))
+}
+function releaseSlot() {
+  const next = jobQueue.shift()
+  if (next) next()          // transfer the slot to the next waiter (activeJobs unchanged)
+  else activeJobs--
+}
+function queueDepth() { return jobQueue.length }
+
 // ── async pipeline stages ──
 async function processSource(sourceId: string) {
   const src = sources.get(sourceId)!
   try {
     src.status = 'normalizing'
-    const input = inputs.get(sourceId)!
-    const meta = await probe(input)
-    src.durationSec = Math.round(meta.durationSec)
-    if (!meta.hasAudio) throw new Error('No audio track detected')
+    // Show "in line" while waiting for a free processing slot.
+    src.stage = 'queued'; src.progressPct = queueDepth() > 0 ? 0 : undefined
+    await acquireSlot()
+    try {
+      const input = inputs.get(sourceId)!
+      const meta = await probe(input)
+      src.durationSec = Math.round(meta.durationSec)
+      if (!meta.hasAudio) throw new Error('No audio track detected')
 
-    const pcm = await extractPCM16k(input)
-    src.stage = 'transcribing'; src.progressPct = 0
-    const segs = await transcribePCM(pcm, (frac) => { src.progressPct = Math.round(frac * 100) })
-    transcripts.set(sourceId, segs)
-    src.stage = 'detecting'
-    candidates.set(sourceId, buildCandidates(segs, pcm))
-    src.transcriptId = randomUUID()
-    src.stage = 'done'; src.progressPct = 100
-    src.status = 'ingested'
-    console.log(`[clips] source ${sourceId} ingested — ${segs.length} segments, ${candidates.get(sourceId)!.length} candidates`)
+      const pcm = await extractPCM16k(input)
+      src.stage = 'transcribing'; src.progressPct = 0
+      const segs = await transcribePCM(pcm, (frac) => { src.progressPct = Math.round(frac * 100) })
+      transcripts.set(sourceId, segs)
+      src.stage = 'detecting'
+      candidates.set(sourceId, buildCandidates(segs, pcm))
+      src.transcriptId = randomUUID()
+      src.stage = 'done'; src.progressPct = 100
+      src.status = 'ingested'
+      console.log(`[clips] source ${sourceId} ingested — ${segs.length} segments, ${candidates.get(sourceId)!.length} candidates`)
+    } finally { releaseSlot() }
   } catch (e: any) {
     src.status = 'failed'
     src.errorMessage = e?.message || String(e)
@@ -169,6 +193,9 @@ async function generateBatch(batchId: string, candidateIds: string[]) {
   const batch = batches.get(batchId)!
   const input = inputs.get(batch.sourceId)!
   const cands = (candidates.get(batch.sourceId) || []).filter((c) => candidateIds.includes(c.candidateId))
+  batch.status = 'queued'; batch.currentStage = 'queued'
+  await acquireSlot()
+  try {
   batch.status = 'generating'; batch.currentStage = 'rendering'
   const outDir = join(DATA, batch.sourceId, 'clips')
   await mkdir(outDir, { recursive: true })
@@ -207,6 +234,7 @@ async function generateBatch(batchId: string, candidateIds: string[]) {
   }
   batch.status = 'reviewing'; batch.currentStage = 'done'; batch.completedAt = new Date().toISOString()
   console.log(`[clips] batch ${batchId} done — ${batch.clips.length} clips rendered`)
+  } finally { releaseSlot() }
 }
 
 // ── server ──

@@ -7,6 +7,7 @@ import { DashboardPage } from '@/routes/DashboardPage'
 import { UploadPage } from '@/routes/UploadPage'
 import { SourcesPage } from '@/routes/SourcesPage'
 import { SourceDetailPage } from '@/routes/SourceDetailPage'
+import { GalleryPage } from '@/routes/GalleryPage'
 import { CandidateReviewPage } from '@/routes/CandidateReviewPage'
 import { BatchProgressPage } from '@/routes/BatchProgressPage'
 import { ClipEditorPage } from '@/routes/ClipEditorPage'
@@ -42,6 +43,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="upload" element={<UploadPage />} />
             <Route path="sources" element={<SourcesPage />} />
+            <Route path="gallery" element={<GalleryPage />} />
             <Route path="sources/:sourceId" element={<SourceDetailPage />} />
             <Route path="sources/:sourceId/candidates" element={<CandidateReviewPage />} />
             <Route path="batches/:batchId" element={<BatchProgressPage />} />
