@@ -17,7 +17,10 @@ export interface Segment {
   speaker?: string
 }
 
-const MODEL = process.env.WHISPER_MODEL || 'Xenova/whisper-tiny.en'
+// Default to base.en for clearly better accuracy than tiny.en. Override with
+// WHISPER_MODEL (e.g. 'Xenova/whisper-tiny.en' on RAM-constrained hosts like
+// Render free tier, or 'Xenova/whisper-small.en' for even higher accuracy).
+const MODEL = process.env.WHISPER_MODEL || 'Xenova/whisper-base.en'
 
 // lazy singleton — the model load is expensive, do it once
 let _asr: any = null
