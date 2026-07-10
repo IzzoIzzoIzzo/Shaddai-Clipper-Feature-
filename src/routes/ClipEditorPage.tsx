@@ -1,298 +1,558 @@
-import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge, type BadgeProps } from '@/components/ui/badge'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import {
+  ArrowLeft, Play, Pause, Download, Eye, Star,
+  Save, Check, Clapperboard, ChevronRight,
+  Clock, BarChart2, Hash, MessageSquare, Sparkles, Film,
+} from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { ArrowLeft, Save, Check, Share2, Sparkles, Hash, Type, MessageSquare, FolderOpen } from 'lucide-react'
-import { useUIStore } from '@/stores/uiStore'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useClipsStore } from '@/stores/clipsStore'
+import { useUIStore } from '@/stores/uiStore'
+import { PLATFORMS } from '@/lib/constants'
+import { cn, formatDuration } from '@/lib/utils'
 
-const PLATFORM_TABS = [
-  { id: 'tiktok', label: 'TikTok', icon: '🎵' },
-  { id: 'reels', label: 'Reels', icon: '📸' },
-  { id: 'youtube_shorts', label: 'Shorts', icon: '▶️' },
-  { id: 'x', label: 'X', icon: '🐦' },
-  { id: 'linkedin', label: 'LinkedIn', icon: '💼' },
-]
+// ── Helpers ─────────────────────────────────────────────────────────────────
+const VERTICAL_PLATFORMS = new Set(['tiktok', 'reels', 'youtube_shorts'])
 
-const HOOK_BADGES: Record<string, BadgeProps['variant']> = {
-  curiosity: 'info',
-  contrarian: 'purple',
-  quote: 'success',
-  list: 'warning',
-  question: 'danger',
-} as const
+function isVertical(platform: string) {
+  return VERTICAL_PLATFORMS.has(platform)
+}
 
+const PLATFORM_COLORS: Record<string, string> = {
+  tiktok: 'text-info',
+  reels: 'text-purple',
+  youtube_shorts: 'text-danger',
+  x: 'text-muted-foreground',
+  linkedin: 'text-primary',
+}
+
+const HOOK_META: Record<string, { label: string; badgeVariant: 'info' | 'purple' | 'success' | 'warning' | 'danger' }> = {
+  curiosity: { label: 'Curiosity Gap', badgeVariant: 'info' },
+  contrarian: { label: 'Contrarian', badgeVariant: 'purple' },
+  quote: { label: 'Quote Punch', badgeVariant: 'success' },
+  list: { label: 'List Hook', badgeVariant: 'warning' },
+  question: { label: 'Question', badgeVariant: 'danger' },
+}
+
+// ── Star Rating ──────────────────────────────────────────────────────────────
+function StarRating({ value, onChange }: { value: number | null; onChange: (n: number) => void }) {
+  const [hovered, setHovered] = useState<number | null>(null)
+  const display = hovered ?? value ?? 0
+  return (
+    <div className="flex items-center gap-1" onMouseLeave={() => setHovered(null)}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          onMouseEnter={() => setHovered(n)}
+          onClick={() => onChange(n)}
+          className={cn(
+            'transition-all duration-150',
+            display >= n ? 'text-warning scale-110' : 'text-border hover:text-warning/50'
+          )}
+          aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+        >
+          <Star className="w-4 h-4" fill={display >= n ? 'currentColor' : 'none'} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Platform Tab ─────────────────────────────────────────────────────────────
+function PlatformTab({
+  platform,
+  active,
+  onClick,
+  hasAsset,
+}: {
+  platform: (typeof PLATFORMS)[number]
+  active: boolean
+  onClick: () => void
+  hasAsset: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'relative flex flex-col items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200',
+        active
+          ? 'bg-primary-light text-primary'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+      )}
+    >
+      <span className="text-base leading-none">{platform.icon}</span>
+      <span className="hidden sm:block leading-none">{platform.label.split(' ')[0]}</span>
+      {hasAsset && (
+        <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-primary" />
+      )}
+    </button>
+  )
+}
+
+// ── Video Player ──────────────────────────────────────────────────────────────
+function VideoPlayer({ src, poster }: { src?: string; poster?: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  const toggle = useCallback(() => {
+    const v = videoRef.current
+    if (!v) return
+    if (v.paused) { v.play(); setPlaying(true) }
+    else { v.pause(); setPlaying(false) }
+  }, [])
+
+  useEffect(() => {
+    const v = videoRef.current
+    if (!v) return
+    const onTime = () => setProgress(v.duration ? v.currentTime / v.duration : 0)
+    const onMeta = () => setDuration(v.duration)
+    const onEnded = () => setPlaying(false)
+    v.addEventListener('timeupdate', onTime)
+    v.addEventListener('loadedmetadata', onMeta)
+    v.addEventListener('ended', onEnded)
+    return () => {
+      v.removeEventListener('timeupdate', onTime)
+      v.removeEventListener('loadedmetadata', onMeta)
+      v.removeEventListener('ended', onEnded)
+    }
+  }, [src])
+
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const v = videoRef.current
+    if (!v || !v.duration) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    v.currentTime = ((e.clientX - rect.left) / rect.width) * v.duration
+  }
+
+  return (
+    <div className="relative bg-black rounded-xl overflow-hidden group">
+      {src ? (
+        <video
+          ref={videoRef}
+          src={src}
+          poster={poster}
+          className="w-full h-full object-contain"
+          onClick={toggle}
+          playsInline
+        />
+      ) : (
+        <div className="aspect-video flex flex-col items-center justify-center bg-surface gap-3">
+          <Film className="w-10 h-10 text-muted-foreground/30" />
+          <p className="text-xs text-muted-foreground">No asset for this platform</p>
+        </div>
+      )}
+
+      {src && (
+        <div className="absolute inset-0 flex flex-col justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          {/* Play overlay */}
+          <div className="flex-1 flex items-center justify-center">
+            <button
+              onClick={toggle}
+              className="w-14 h-14 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center border border-white/10 hover:bg-black/80 transition-colors"
+            >
+              {playing
+                ? <Pause className="w-6 h-6 text-white" />
+                : <Play className="w-6 h-6 text-white ml-0.5" />}
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div className="p-3 bg-gradient-to-t from-black/70 to-transparent">
+            <div className="flex items-center gap-2 text-white/70 text-xs font-mono mb-1.5">
+              <span>{duration ? formatDuration(progress * duration) : '0:00'}</span>
+              <span className="text-white/30">/</span>
+              <span>{duration ? formatDuration(duration) : '0:00'}</span>
+            </div>
+            <div
+              className="h-1 bg-white/20 rounded-full cursor-pointer"
+              onClick={seek}
+            >
+              <div
+                className="h-full bg-primary rounded-full transition-all duration-100"
+                style={{ width: `${progress * 100}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Section Label ─────────────────────────────────────────────────────────────
+function SectionLabel({ icon: Icon, label }: { icon: React.FC<{ className?: string }>; label: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+      <span className="text-xs font-mono uppercase tracking-widest text-muted-foreground">{label}</span>
+      <div className="flex-1 film-strip" />
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export function ClipEditorPage() {
   const { clipId } = useParams<{ clipId: string }>()
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const clip = useClipsStore((s) => s.clips.find((c) => c.clipId === clipId))
   const updateClip = useClipsStore((s) => s.updateClip)
+  const rateClip = useClipsStore((s) => s.rateClip)
   const enqueueExport = useClipsStore((s) => s.enqueueExport)
-  const [selectedHook, setSelectedHook] = useState<string>('curiosity')
-  const [activePlatform, setActivePlatform] = useState('tiktok')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+
+  const [activePlatform, setActivePlatform] = useState<string>(PLATFORMS[0].id)
+  const [title, setTitle] = useState(clip?.title ?? '')
   const [primaryCaption, setPrimaryCaption] = useState(clip?.captions.primary ?? '')
   const [secondaryCaption, setSecondaryCaption] = useState(clip?.captions.secondary ?? '')
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [selectedHook, setSelectedHook] = useState<string | null>(
+    clip?.hooks ? Object.keys(clip.hooks).find(k => !!clip.hooks[k as keyof typeof clip.hooks]) ?? null : null
+  )
 
+  // ── Empty state
   if (!clip) {
     return (
-      <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-        <button onClick={() => navigate('/clips')} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Back to Dashboard
-        </button>
-        <Card className="p-16 text-center">
-          <FolderOpen className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-          <p className="text-muted-foreground">Clip not found. Generate clips from a source to see them here.</p>
-        </Card>
+      <div className="max-w-6xl mx-auto animate-fade-in space-y-4">
+        <Link
+          to="/clips"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </Link>
+        <EmptyState
+          icon={<Clapperboard />}
+          title="Clip not found"
+          description="This clip may have been removed or the ID is incorrect. Generate clips from a source to populate the editor."
+          action={{ label: 'Back to Clips', onClick: () => navigate('/clips') }}
+        />
       </div>
     )
   }
 
-  const handleSave = () => {
+  // ── Derived
+  const firstPlatformWithAsset = PLATFORMS.find((p) => !!clip.platformAssets[p.id])?.id ?? PLATFORMS[0].id
+  const resolvedPlatform = activePlatform
+  const asset = clip.platformAssets[resolvedPlatform]
+  const videoSrc = asset?.videoUrl ?? undefined
+  const scorePercent = Math.round(clip.compositeScore * 100)
+  const hooks = clip.hooks as Record<string, string | undefined>
+  const hookEntries = Object.entries(hooks).filter(([, v]) => !!v) as [string, string][]
+
+  const markDirty = () => { setDirty(true); setSaved(false) }
+
+  const handleSave = async () => {
     setSaving(true)
-    updateClip(clip.clipId, { captions: { primary: primaryCaption, secondary: secondaryCaption } })
-    setTimeout(() => {
-      setSaving(false)
-      setSaved(true)
-      addToast({ type: 'success', title: 'Draft saved', message: 'Your clip changes have been saved.', duration: 3000 })
-    }, 600)
+    updateClip(clip.clipId, {
+      title,
+      captions: { primary: primaryCaption, secondary: secondaryCaption },
+    })
+    await new Promise((r) => setTimeout(r, 500))
+    setSaving(false)
+    setSaved(true)
+    setDirty(false)
+    addToast({ type: 'success', title: 'Saved', message: 'Changes written to clip.', duration: 2500 })
   }
 
   const handleApprove = () => {
     updateClip(clip.clipId, { status: 'approved' })
     addToast({
       type: 'success',
-      title: 'Clip approved!',
-      message: 'Ready for export. Navigate to Export Queue to publish.',
+      title: 'Clip approved',
+      message: 'Ready for export queue.',
       duration: 4000,
-      action: { label: 'View Queue', onClick: () => navigate('/clips/export-queue') },
+      action: { label: 'Go to Queue', onClick: () => navigate('/clips/export-queue') },
     })
   }
 
+  const handleExport = () => {
+    enqueueExport(clip.clipId, resolvedPlatform)
+    addToast({ type: 'info', title: 'Export queued', message: `Sending to ${resolvedPlatform}…`, duration: 3000 })
+    navigate('/clips/export-queue')
+  }
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="text-muted-foreground hover:text-foreground p-1">
-            <ArrowLeft className="h-5 w-5" />
+    <div className="max-w-7xl mx-auto animate-fade-in space-y-0">
+      {/* ── Top Bar ── */}
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={() => navigate(-1)}
+            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
           </button>
-          <div>
-            <h2 className="text-xl font-bold">{clip.title}</h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-2">
-              <span>{clip.durationSec}s</span>
-              <span className="text-muted-foreground/30">•</span>
-              <span>Score: {(clip.compositeScore * 100).toFixed(0)}</span>
-              <span className="text-muted-foreground/30">•</span>
-              <Badge variant="default" size="sm">{clip.status}</Badge>
-            </p>
+          <div className="min-w-0">
+            <h1 className="font-display text-xl font-bold truncate text-foreground leading-tight">
+              {clip.title}
+            </h1>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <span className="font-mono text-xs text-muted-foreground">
+                {formatDuration(clip.startSec)} — {formatDuration(clip.endSec)}
+              </span>
+              <span className="text-muted-foreground/30">·</span>
+              <span className="font-mono text-xs text-muted-foreground">
+                {formatDuration(clip.durationSec)}
+              </span>
+              <span className="text-muted-foreground/30">·</span>
+              <Badge
+                variant={clip.status === 'approved' ? 'success' : clip.status === 'exported' ? 'info' : 'default'}
+                size="sm"
+              >
+                {clip.status}
+              </Badge>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleSave} disabled={saving}>
-            {saving ? (
-              <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {saved ? 'Saved!' : 'Save Draft'}
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSave}
+            loading={saving}
+            disabled={!dirty && !saving}
+          >
+            {saved ? <Check className="w-4 h-4 text-success" /> : <Save className="w-4 h-4" />}
+            {saved ? 'Saved' : 'Save'}
           </Button>
-          <Button onClick={handleApprove}>
-            <Check className="h-4 w-4" /> Approve
+          <Button size="sm" onClick={handleApprove} disabled={clip.status === 'approved'}>
+            <Check className="w-4 h-4" />
+            Approve
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Preview Area */}
-        <div className="lg:col-span-3 space-y-4">
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="aspect-video bg-muted rounded-lg flex items-center justify-center text-muted-foreground">
-                <div className="text-center">
-                  <div className="text-4xl mb-2">🎬</div>
-                  <p className="text-sm font-medium">Video Preview</p>
-                  <p className="text-xs mt-1 text-muted-foreground">
-                    Clip: {Math.floor(clip.startSec / 60)}:{Math.round(clip.startSec % 60).toString().padStart(2, '0')} – {Math.floor(clip.endSec / 60)}:{Math.round(clip.endSec % 60).toString().padStart(2, '0')}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      {/* ── Body: 3-col editing console ── */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px_280px] gap-5">
 
-          {/* Platform Preview */}
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-1 mb-4 border-b border-border pb-2">
-                {PLATFORM_TABS.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setActivePlatform(p.id)}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-all',
-                      activePlatform === p.id
-                        ? 'bg-primary-light text-primary font-medium'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    )}
-                  >
-                    <span>{p.icon}</span>
-                    <span className="hidden sm:inline">{p.label}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-center">
-                <div className="w-[280px] rounded-2xl border-4 border-border overflow-hidden bg-muted shadow-lg">
-                  <div className="aspect-[9/16] flex items-center justify-center text-muted-foreground text-sm">
-                    {activePlatform === 'x' ? (
-                      <div className="p-4 text-left w-full">
-                        <p className="font-medium mb-3 flex items-center gap-1.5">🐦 Thread Preview</p>
-                        <div className="space-y-3">
-                          <div className="p-2 rounded-lg bg-card text-xs border border-border">
-                            <p className="font-medium mb-1">Tweet 1</p>
-                            <p className="text-muted-foreground">{clip.captions.primary.slice(0, 130)}...</p>
-                          </div>
-                          <div className="p-2 rounded-lg bg-card text-xs border border-border">
-                            <p className="font-medium mb-1">Tweet 2</p>
-                            <p className="text-muted-foreground">{clip.captions.secondary.slice(0, 100)}...</p>
-                          </div>
-                        </div>
-                      </div>
-                    ) : activePlatform === 'linkedin' ? (
-                      <div className="p-4 text-left w-full">
-                        <p className="font-medium mb-3 flex items-center gap-1.5">💼 LinkedIn Post</p>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{clip.captions.primary}</p>
-                      </div>
-                    ) : (
-                      <div className="text-center p-4 w-full">
-                        <p className="text-base font-bold text-primary mb-3 leading-snug">
-                          {clip.hooks[selectedHook as keyof typeof clip.hooks]}
-                        </p>
-                        <div className="w-full h-0.5 bg-muted-foreground/20 rounded my-3" />
-                        <p className="text-xs text-muted-foreground">[Video playing — {clip.durationSec}s]</p>
-                        <div className="mt-3 p-2 rounded-lg bg-foreground/5 text-xs text-left">{clip.captions.primary.slice(0, 80)}...</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* ── Column 1: Video + Platform Switcher ── */}
+        <div className="space-y-4">
+          {/* Score strip */}
+          <div className="flex items-center gap-4 px-4 py-2 rounded-lg bg-surface border border-border">
+            <div className="flex items-center gap-2">
+              <BarChart2 className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Score</span>
+            </div>
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all"
+                style={{ width: `${scorePercent}%` }}
+              />
+            </div>
+            <span className="font-mono text-sm font-bold text-primary tabular-nums">{scorePercent}</span>
+            <div className="w-px h-4 bg-border" />
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="font-mono text-xs text-muted-foreground">
+                {formatDuration(clip.durationSec)}
+              </span>
+            </div>
+            <div className="w-px h-4 bg-border" />
+            <StarRating
+              value={clip.userRating}
+              onChange={(n) => rateClip(clip.clipId, n)}
+            />
+          </div>
+
+          {/* Platform tabs */}
+          <div className="flex items-center gap-1 border-b border-border pb-3">
+            {PLATFORMS.filter(p => p.id !== 'email').map((p) => (
+              <PlatformTab
+                key={p.id}
+                platform={p}
+                active={activePlatform === p.id}
+                onClick={() => setActivePlatform(p.id)}
+                hasAsset={!!clip.platformAssets[p.id]?.videoUrl}
+              />
+            ))}
+            <div className="flex-1" />
+            <Link
+              to={`/clips/clips/${clipId}/preview/${resolvedPlatform}`}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-primary-light"
+            >
+              <Eye className="w-3.5 h-3.5" /> Preview
+              <ChevronRight className="w-3 h-3" />
+            </Link>
+          </div>
+
+          {/* Video player */}
+          <VideoPlayer src={videoSrc} poster={clip.coverUrl} />
+
+          {/* Export / Download row */}
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" className="flex-1" onClick={handleExport}>
+              Export to {PLATFORMS.find((p) => p.id === resolvedPlatform)?.label ?? resolvedPlatform}
+            </Button>
+            {videoSrc && (
+              <a href={videoSrc} download className="shrink-0">
+                <Button variant="outline" size="md">
+                  <Download className="w-4 h-4" />
+                  Download
+                </Button>
+              </a>
+            )}
+          </div>
         </div>
 
-        {/* Editor Panel */}
-        <div className="lg:col-span-2 space-y-4">
-          {/* Hooks */}
-          <Card className="card-hover">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-muted-foreground" />
-                Hooks
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {Object.entries(clip.hooks).map(([type, text]) => (
-                <div
-                  key={type}
-                  onClick={() => setSelectedHook(type)}
-                  className={cn(
-                    'p-3 rounded-lg border text-sm cursor-pointer transition-all',
-                    selectedHook === type
-                      ? 'border-primary bg-primary-light'
-                      : 'border-border hover:border-primary/50 hover:bg-muted/50'
-                  )}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <Badge variant={HOOK_BADGES[type] || 'default'} size="sm">
-                      {type}
-                    </Badge>
-                    {selectedHook === type && <Check className="h-3.5 w-3.5 text-primary" />}
-                  </div>
-                  <p className="text-xs text-foreground leading-relaxed">{text}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+        {/* ── Column 2: Editor Panel ── */}
+        <div className="space-y-5">
+          {/* Title */}
+          <div>
+            <SectionLabel icon={Film} label="Title" />
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => { setTitle(e.target.value); markDirty() }}
+              className={cn(
+                'w-full px-3 py-2.5 rounded-lg bg-surface border text-sm font-medium text-foreground',
+                'focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50',
+                'placeholder:text-muted-foreground/40 transition-colors',
+                'border-border hover:border-muted-foreground/30'
+              )}
+              placeholder="Clip title…"
+            />
+          </div>
 
           {/* Captions */}
-          <Card className="card-hover">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                Captions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          <div>
+            <SectionLabel icon={MessageSquare} label="Captions" />
+            <div className="space-y-2.5">
               <div>
-                <label className="text-xs text-muted-foreground block mb-1.5 font-medium">Primary</label>
+                <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-1.5 block">
+                  Primary
+                </label>
                 <textarea
                   value={primaryCaption}
-                  onChange={(e) => { setPrimaryCaption(e.target.value); setSaved(false) }}
-                  rows={3}
-                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors resize-none"
+                  onChange={(e) => { setPrimaryCaption(e.target.value); markDirty() }}
+                  rows={4}
+                  className={cn(
+                    'w-full px-3 py-2.5 rounded-lg bg-surface border text-sm text-foreground',
+                    'focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50',
+                    'placeholder:text-muted-foreground/40 resize-none transition-colors',
+                    'border-border hover:border-muted-foreground/30 shaddai-scrollbar'
+                  )}
+                  placeholder="Caption for this clip…"
                 />
+                <p className="text-right text-[11px] font-mono text-muted-foreground/50 mt-1">
+                  {primaryCaption.length} chars
+                </p>
               </div>
               <div>
-                <label className="text-xs text-muted-foreground block mb-1.5 font-medium">Secondary</label>
+                <label className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-1.5 block">
+                  Secondary / CTA
+                </label>
                 <textarea
                   value={secondaryCaption}
-                  onChange={(e) => { setSecondaryCaption(e.target.value); setSaved(false) }}
+                  onChange={(e) => { setSecondaryCaption(e.target.value); markDirty() }}
                   rows={2}
-                  className="w-full p-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors resize-none"
+                  className={cn(
+                    'w-full px-3 py-2.5 rounded-lg bg-surface border text-sm text-foreground',
+                    'focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50',
+                    'placeholder:text-muted-foreground/40 resize-none transition-colors',
+                    'border-border hover:border-muted-foreground/30 shaddai-scrollbar'
+                  )}
+                  placeholder="Call-to-action or secondary caption…"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          {/* Hashtags */}
-          <Card className="card-hover">
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Hash className="h-4 w-4 text-muted-foreground" />
-                Hashtags
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {[
-                { label: 'Core', tags: clip.hashtags.core, variant: 'info' as const },
-                { label: 'Niche', tags: clip.hashtags.niche, variant: 'purple' as const },
-                { label: 'Brand', tags: clip.hashtags.brand, variant: 'warning' as const },
-              ].map((group) => (
-                <div key={group.label}>
-                  <span className="text-xs text-muted-foreground font-medium">{group.label}</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {group.tags.map((tag) => (
-                      <Badge key={tag} variant={group.variant} size="sm">{tag}</Badge>
-                    ))}
+          {/* Hashtag groups */}
+          {(clip.hashtags.core.length > 0 || clip.hashtags.niche.length > 0 || clip.hashtags.brand.length > 0) && (
+            <div>
+              <SectionLabel icon={Hash} label="Hashtags" />
+              <div className="space-y-2">
+                {[
+                  { label: 'Core', tags: clip.hashtags.core, variant: 'info' as const },
+                  { label: 'Niche', tags: clip.hashtags.niche, variant: 'purple' as const },
+                  { label: 'Brand', tags: clip.hashtags.brand, variant: 'warning' as const },
+                ].filter(g => g.tags.length > 0).map((group) => (
+                  <div key={group.label}>
+                    <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/60">
+                      {group.label}
+                    </span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {group.tags.map((tag) => (
+                        <Badge key={tag} variant={group.variant} size="sm">
+                          #{tag}
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => navigate(`/clips/clips/${clipId}/preview/tiktok`)}
-            >
-              <Share2 className="h-4 w-4" /> Preview
-            </Button>
-            <Button
-              variant="secondary"
-              className="flex-1"
-              onClick={() => {
-                enqueueExport(clip.clipId, activePlatform)
-                addToast({ type: 'info', title: 'Export queued', message: `Publishing to ${activePlatform}…`, duration: 3000 })
-                navigate('/clips/export-queue')
-              }}
-            >
-              <Type className="h-4 w-4" /> Export
-            </Button>
+        {/* ── Column 3: Hooks Panel ── */}
+        <div className="space-y-5">
+          {hookEntries.length > 0 && (
+            <div>
+              <SectionLabel icon={Sparkles} label="Hooks" />
+              <div className="space-y-2">
+                {hookEntries.map(([type, text], i) => {
+                  const meta = HOOK_META[type] ?? { label: type, badgeVariant: 'default' as const }
+                  const isSelected = selectedHook === type
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedHook(isSelected ? null : type)}
+                      className={cn(
+                        'w-full text-left p-3 rounded-lg border transition-all duration-200 animate-slide-up',
+                        `stagger-${Math.min(i + 1, 8)}`,
+                        isSelected
+                          ? 'border-primary/50 bg-primary-light ring-1 ring-primary/20'
+                          : 'border-border bg-surface hover:border-muted-foreground/30 hover:bg-muted/40'
+                      )}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <Badge variant={meta.badgeVariant as any} size="sm">
+                          {meta.label}
+                        </Badge>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                      </div>
+                      <p className="text-xs text-foreground leading-relaxed">{text}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Platform asset summary */}
+          <div>
+            <SectionLabel icon={Film} label="Assets" />
+            <div className="space-y-1.5">
+              {PLATFORMS.filter(p => p.id !== 'email').map((p) => {
+                const a = clip.platformAssets[p.id]
+                const has = !!a?.videoUrl
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      'flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-colors',
+                      activePlatform === p.id
+                        ? 'border-primary/30 bg-primary-light'
+                        : 'border-border bg-surface'
+                    )}
+                  >
+                    <span className={cn('flex items-center gap-2 font-medium', PLATFORM_COLORS[p.id])}>
+                      <span>{p.icon}</span>
+                      <span className="text-foreground">{p.label.split(' ')[0]}</span>
+                    </span>
+                    {has
+                      ? <span className="font-mono text-success text-[10px]">READY</span>
+                      : <span className="font-mono text-muted-foreground/40 text-[10px]">—</span>}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

@@ -1,292 +1,526 @@
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { ProgressBar } from '@/components/ui/progress-bar'
-import { DropZone } from '@/components/ui/drop-zone'
 import { formatFileSize, cn } from '@/lib/utils'
-import { PLATFORMS } from '@/lib/constants'
-import { Upload, Link, Youtube, Check, ArrowRight, X, Globe } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useClipsStore } from '@/stores/clipsStore'
+import { MAX_FILE_SIZE } from '@/lib/constants'
+import {
+  Film,
+  Upload,
+  FileVideo,
+  X,
+  ArrowRight,
+  Link,
+  Clapperboard,
+  CheckCircle2,
+  AlertCircle,
+  Zap,
+} from 'lucide-react'
 
-type UploadTab = 'file' | 'url'
+// ─── helpers ─────────────────────────────────────────────────
+function zeroPad(n: number, len = 2) {
+  return String(Math.floor(n)).padStart(len, '0')
+}
+function toTimecode(bytes: number) {
+  const fake = Math.floor(bytes / 1_000_000)
+  const h = zeroPad(Math.floor(fake / 3600))
+  const m = zeroPad(Math.floor((fake % 3600) / 60))
+  const s = zeroPad(fake % 60)
+  const f = zeroPad(Math.floor((bytes % 1_000_000) / 41_666), 2)
+  return `${h}:${m}:${s}:${f}`
+}
 
+// ─── Perforation strip ────────────────────────────────────────
+function PerforationStrip({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-[5px] py-[3px] px-2 overflow-hidden select-none',
+        className,
+      )}
+      aria-hidden
+    >
+      {Array.from({ length: 32 }).map((_, i) => (
+        <div
+          key={i}
+          className="shrink-0 w-[8px] h-[13px] rounded-[2px] bg-border opacity-50"
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Corner viewfinder brackets ───────────────────────────────
+function FrameCorners({ active, error }: { active: boolean; error?: boolean }) {
+  const color = error
+    ? 'border-danger'
+    : active
+      ? 'border-primary'
+      : 'border-muted-foreground/30'
+  const opacity = active || error ? 'opacity-100' : 'opacity-60'
+  const size = active ? 'w-7 h-7' : 'w-5 h-5'
+  const cls = cn('absolute transition-all duration-400', size, opacity)
+  return (
+    <>
+      <span className={cn(cls, 'top-3 left-3 border-t-2 border-l-2', color)} />
+      <span className={cn(cls, 'top-3 right-3 border-t-2 border-r-2', color)} />
+      <span className={cn(cls, 'bottom-3 left-3 border-b-2 border-l-2', color)} />
+      <span className={cn(cls, 'bottom-3 right-3 border-b-2 border-r-2', color)} />
+    </>
+  )
+}
+
+// ─── Reel icon decorations ────────────────────────────────────
+function ReelDecoration({ className }: { className?: string }) {
+  return (
+    <div className={cn('relative shrink-0', className)} aria-hidden>
+      {/* outer ring */}
+      <div className="w-9 h-9 rounded-full border-2 border-border flex items-center justify-center">
+        {/* hub */}
+        <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/40" />
+      </div>
+      {/* spokes */}
+      {[0, 60, 120].map((deg) => (
+        <div
+          key={deg}
+          className="absolute top-1/2 left-1/2 w-[14px] h-[1.5px] bg-muted-foreground/30 origin-left"
+          style={{ transform: `translate(0, -50%) rotate(${deg}deg)` }}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────
 export function UploadPage() {
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
   const uploadSource = useClipsStore((s) => s.uploadSource)
-  const importUrl = useClipsStore((s) => s.importUrl)
-  const [tab, setTab] = useState<UploadTab>('file')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [uploadProgress, setUploadProgress] = useState(0)
+
+  const [file, setFile] = useState<File | null>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [fileError, setFileError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploaded, setUploaded] = useState(false)
-  const [urlInput, setUrlInput] = useState('')
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tiktok', 'reels'])
-  const [createdSourceId, setCreatedSourceId] = useState<string | null>(null)
+  const [sourceId, setSourceId] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const handleFile = (file: File) => {
-    setSelectedFile(file)
+  // ── validation ──
+  const validateAndSet = useCallback((f: File) => {
+    setFileError(null)
+    if (!f.type.startsWith('video/')) {
+      setFileError('Only video files are accepted — MP4, MOV, WEBM')
+      return
+    }
+    if (f.size > MAX_FILE_SIZE) {
+      setFileError(`File too large — max ${formatFileSize(MAX_FILE_SIZE)}`)
+      return
+    }
+    setFile(f)
+  }, [])
+
+  // ── drag handlers ──
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+  const onDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving the drop zone itself (not a child)
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false)
+    }
+  }
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f) validateAndSet(f)
+  }
+
+  // ── upload ──
+  const handleUpload = async () => {
+    if (!file || uploading) return
     setUploading(true)
-    let pct = 0
-    const interval = setInterval(() => {
-      pct += Math.random() * 15
-      if (pct >= 100) {
-        pct = 100
-        clearInterval(interval)
-        // upload the real bytes to the engine — kicks off ffmpeg + Whisper
-        uploadSource(file).then((sourceId) => {
-          setCreatedSourceId(sourceId)
-          setUploaded(true)
-          setUploading(false)
-          addToast({ type: 'success', title: 'Upload complete!', message: `${file.name} is being transcribed & analyzed.`, duration: 5000 })
-        }).catch((err) => {
-          setUploading(false)
-          const premium = String(err.message).includes('premium')
-          addToast({ type: premium ? 'info' : 'error', title: premium ? 'Premium feature' : 'Upload failed', message: premium ? 'Clips is a premium feature — connect a paid tier.' : String(err.message), duration: 6000 })
-        })
-      }
-      setUploadProgress(Math.min(pct, 100))
-    }, 300)
-  }
-
-  const switchTab = (newTab: UploadTab) => {
-    setTab(newTab)
-    handleReset()
-  }
-
-  const togglePlatform = (id: string) => {
-    setSelectedPlatforms((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    )
-  }
-
-  const handleUrlImport = () => {
-    if (!urlInput.trim()) return
-    setUploading(true)
-    addToast({ type: 'info', title: 'Importing URL...', message: 'Fetching content from the provided URL.', duration: 3000 })
-    let pct = 0
-    const interval = setInterval(() => {
-      pct += Math.random() * 20
-      if (pct >= 100) {
-        pct = 100
-        clearInterval(interval)
-        importUrl(urlInput).then((sourceId) => {
-          setCreatedSourceId(sourceId)
-          setUploading(false)
-          setUploaded(true)
-          addToast({ type: 'info', title: 'Heads up', message: 'URL import is coming soon — upload a file to process for real now.', duration: 6000 })
-        })
-      }
-      setUploadProgress(Math.min(pct, 100))
-    }, 400)
+    try {
+      const id = await uploadSource(file)
+      setSourceId(id)
+      setUploaded(true)
+      addToast({
+        type: 'success',
+        title: 'Intake complete',
+        message: `${file.name} is being transcribed and analyzed.`,
+        duration: 5000,
+      })
+      setTimeout(() => navigate(`/clips/sources/${id}`), 1200)
+    } catch (err) {
+      setUploading(false)
+      const isPremium = String((err as Error).message).includes('premium')
+      addToast({
+        type: isPremium ? 'info' : 'error',
+        title: isPremium ? 'Premium feature' : 'Upload failed',
+        message: isPremium
+          ? 'Full processing requires a paid tier — connect in Settings.'
+          : String((err as Error).message),
+        duration: 7000,
+      })
+    }
   }
 
   const handleReset = () => {
-    setSelectedFile(null)
-    setUploadProgress(0)
+    setFile(null)
+    setFileError(null)
     setUploading(false)
     setUploaded(false)
-    setUrlInput('')
-    setCreatedSourceId(null)
+    setSourceId(null)
   }
 
+  const handleUrlComingSoon = () => {
+    addToast({
+      type: 'info',
+      title: 'URL import — coming soon',
+      message: 'Drop a video file to process right now.',
+      duration: 4000,
+    })
+  }
+
+  // ── derived ──
+  const hasFile = Boolean(file)
+  const dropZoneActive = isDragOver && !hasFile
+  const canUpload = hasFile && !uploading && !uploaded
+
   return (
-    <div className="max-w-3xl mx-auto space-y-8 animate-fade-in">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Upload Source</h2>
-        <p className="text-muted-foreground mt-1">Upload a video, podcast, or livestream to generate viral clips</p>
-      </div>
+    <div className="max-w-2xl mx-auto animate-fade-in">
 
-      {/* Upload Tab Toggle */}
-      <div className="flex items-center gap-1 bg-muted p-1 rounded-lg w-fit">
-        <button
-          onClick={() => switchTab('file')}
+      {/* ── Header ── */}
+      <header className="mb-7 stagger-1 animate-fade-in">
+        <div className="flex items-center gap-2.5 mb-2">
+          <Clapperboard className="h-4 w-4 text-primary" aria-hidden />
+          <span className="font-mono text-[10px] text-primary tracking-[0.2em] uppercase">
+            Intake Bay / IN-01
+          </span>
+          <span className="rec-dot inline-block w-1.5 h-1.5 rounded-full bg-secondary" aria-hidden />
+        </div>
+        <h1 className="font-display text-4xl font-bold text-foreground tracking-tight leading-none mb-1.5">
+          Load Source
+        </h1>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          Drop a video — ffmpeg and Whisper take it from there.
+        </p>
+      </header>
+
+      {/* ── FRAME WRAPPER — film-strip top ── */}
+      <div className="stagger-2 animate-fade-in">
+
+        {/* Film perforations — top rail */}
+        <div className="bg-surface border border-border rounded-t-xl overflow-hidden">
+          <div className="flex items-center justify-between px-3">
+            <ReelDecoration className="opacity-50" />
+            <PerforationStrip className="flex-1" />
+            <ReelDecoration className="opacity-50 scale-x-[-1]" />
+          </div>
+        </div>
+
+        {/* ── MAIN DROP ZONE ── */}
+        <div
           className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
-            tab === 'file' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
+            'relative bg-card border-x border-border transition-all duration-300',
+            dropZoneActive && 'bg-primary-light border-primary',
+            fileError && 'border-danger',
+            uploaded && 'border-success/30',
           )}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          role="region"
+          aria-label="Video intake drop zone"
         >
-          <Upload className="h-4 w-4" />
-          Upload File
-        </button>
-        <button
-          onClick={() => switchTab('url')}
-          className={cn(
-            'flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors',
-            tab === 'url' ? 'bg-card shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'
-          )}
-        >
-          <Globe className="h-4 w-4" />
-          Import from URL
-        </button>
-      </div>
+          <FrameCorners active={dropZoneActive || hasFile} error={Boolean(fileError)} />
 
-      {/* Upload Area */}
-      {tab === 'file' ? (
-        <Card className="card-hover">
-          <CardContent className="p-6">
-            {!selectedFile ? (
-              <DropZone onFile={handleFile} />
-            ) : (
-              <div className="space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary-light">
-                      <Upload className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{selectedFile.name}</p>
-                      <p className="text-xs text-muted-foreground">{formatFileSize(selectedFile.size)}</p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={handleReset} disabled={uploading}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                {uploading && (
-                  <div className="space-y-2 animate-fade-in">
-                    <ProgressBar value={uploadProgress} showLabel size="md" />
-                    <p className="text-xs text-muted-foreground animate-pulse-soft">
-                      {uploadProgress < 100 ? 'Uploading to SHADDAI storage...' : 'Processing upload...'}
-                    </p>
-                  </div>
-                )}
-                {uploaded && (
-                  <div className="flex items-center gap-2 text-success text-sm animate-fade-in">
-                    <Check className="h-4 w-4" />
-                    Upload complete! File is being processed.
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="card-hover">
-          <CardContent className="p-6">
-            {!uploading && !uploaded ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Youtube className="h-5 w-5 text-danger" />
-                  <span className="text-sm font-medium">Import from YouTube, Vimeo, or direct URL</span>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="https://youtube.com/watch?v=..."
-                    value={urlInput}
-                    onChange={(e) => setUrlInput(e.target.value)}
-                    className="flex-1 h-10 px-3 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors"
-                  />
-                  <Button disabled={!urlInput.trim()} onClick={handleUrlImport}>Import</Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 animate-fade-in">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-primary-light">
-                      <Globe className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">Import from URL</p>
-                      <p className="text-xs text-muted-foreground truncate max-w-[300px]">{urlInput}</p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" onClick={handleReset} disabled={uploading}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                {uploading && (
-                  <div className="space-y-2">
-                    <ProgressBar value={uploadProgress} showLabel size="md" />
-                    <p className="text-xs text-muted-foreground animate-pulse-soft">
-                      Downloading and processing content...
-                    </p>
-                  </div>
-                )}
-                {uploaded && (
-                  <div className="flex items-center gap-2 text-success text-sm">
-                    <Check className="h-4 w-4" />
-                    URL imported successfully!
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Platform Selection */}
-      <Card className="card-hover">
-        <CardHeader>
-          <CardTitle className="text-sm">Target Platforms</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {PLATFORMS.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => togglePlatform(p.id)}
+          {/* ── IDLE / EMPTY state ── */}
+          {!hasFile && !fileError && (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className={cn(
+                'w-full flex flex-col items-center justify-center gap-6 py-24 px-10 cursor-pointer',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-inset',
+                'transition-all duration-300 group',
+              )}
+              aria-label="Click to browse for a video file"
+            >
+              {/* Central icon well */}
+              <div
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all',
-                  selectedPlatforms.includes(p.id)
-                    ? 'border-primary bg-primary-light text-primary'
-                    : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                  'relative flex items-center justify-center w-24 h-24 rounded-2xl border-2 transition-all duration-300',
+                  dropZoneActive
+                    ? 'border-primary bg-primary-light scale-110 shadow-[0_0_32px_-4px_var(--color-primary)]'
+                    : 'border-border bg-surface group-hover:border-primary/40 group-hover:bg-primary-light/30 group-hover:scale-105',
                 )}
               >
-                <span>{p.icon}</span>
-                <span>{p.label}</span>
-                {selectedPlatforms.includes(p.id) && <Check className="h-3.5 w-3.5" />}
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                {/* Crosshair lines */}
+                <span
+                  className={cn(
+                    'absolute left-1/2 top-3 bottom-3 w-px -translate-x-1/2 transition-colors duration-300',
+                    dropZoneActive ? 'bg-primary/40' : 'bg-border/60 group-hover:bg-primary/20',
+                  )}
+                  aria-hidden
+                />
+                <span
+                  className={cn(
+                    'absolute top-1/2 left-3 right-3 h-px -translate-y-1/2 transition-colors duration-300',
+                    dropZoneActive ? 'bg-primary/40' : 'bg-border/60 group-hover:bg-primary/20',
+                  )}
+                  aria-hidden
+                />
+                {dropZoneActive ? (
+                  <FileVideo className="h-10 w-10 text-primary animate-bounce relative z-10" />
+                ) : (
+                  <Upload className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors duration-300 relative z-10" />
+                )}
+              </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-3 animate-fade-in">
-        {uploaded ? (
-          <>
-            <Button onClick={() => navigate(createdSourceId ? `/clips/sources/${createdSourceId}` : '/clips/sources')}>
-              View Source <ArrowRight className="h-4 w-4 ml-1" />
-            </Button>
-            <Button variant="outline" onClick={() => navigate('/clips/sources')}>
-              All Sources
-            </Button>
-          </>
+              {/* Label cluster */}
+              <div className="text-center space-y-2">
+                <p
+                  className={cn(
+                    'font-display text-xl font-semibold transition-colors duration-200',
+                    dropZoneActive ? 'text-primary' : 'text-foreground',
+                  )}
+                >
+                  {dropZoneActive ? 'Release to load footage' : 'Drop footage here'}
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  or{' '}
+                  <span className="text-primary underline underline-offset-4 decoration-primary/40">
+                    browse files
+                  </span>{' '}
+                  — video/* up to{' '}
+                  <span className="font-mono text-foreground">{formatFileSize(MAX_FILE_SIZE)}</span>
+                </p>
+              </div>
+
+              {/* Format badge row */}
+              <div className="flex items-center gap-2">
+                {['MP4', 'MOV', 'WEBM'].map((fmt, i) => (
+                  <span
+                    key={fmt}
+                    className="font-mono text-[10px] text-muted-foreground/60 tracking-[0.18em] uppercase px-2.5 py-1 border border-border rounded bg-surface"
+                  >
+                    {fmt}
+                  </span>
+                ))}
+                <span className="font-mono text-[10px] text-muted-foreground/40 tracking-widest">
+                  · up to 500MB
+                </span>
+              </div>
+            </button>
+          )}
+
+          {/* ── ERROR state ── */}
+          {!hasFile && fileError && (
+            <div className="flex flex-col items-center justify-center gap-5 py-24 px-10 text-center animate-scale-in">
+              <div className="w-16 h-16 rounded-2xl bg-danger-light border border-danger/30 flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 text-danger" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="font-display text-base font-semibold text-danger">{fileError}</p>
+                <button
+                  type="button"
+                  onClick={() => { setFileError(null); inputRef.current?.click() }}
+                  className="font-mono text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground transition-colors tracking-wide"
+                >
+                  TRY AGAIN
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── FILE LOADED state ── */}
+          {hasFile && file && (
+            <div
+              className={cn(
+                'relative py-10 px-10 space-y-7',
+                uploading && 'scan-line',
+              )}
+            >
+              {/* File identity */}
+              <div className="flex items-start gap-5">
+                <div
+                  className={cn(
+                    'shrink-0 w-14 h-14 rounded-xl border flex items-center justify-center transition-all duration-300',
+                    uploaded
+                      ? 'bg-success-light border-success/40'
+                      : 'bg-primary-light border-primary/30',
+                  )}
+                >
+                  {uploaded ? (
+                    <CheckCircle2 className="h-7 w-7 text-success animate-scale-in" />
+                  ) : (
+                    <Film className="h-7 w-7 text-primary" />
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className="font-display font-semibold text-foreground text-base truncate leading-snug">
+                    {file.name}
+                  </p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {formatFileSize(file.size)}
+                    </span>
+                    <span className="w-px h-3 bg-border" aria-hidden />
+                    <span className="font-mono text-[10px] text-primary/70 tracking-widest">
+                      TC {toTimecode(file.size)}
+                    </span>
+                    <span className="w-px h-3 bg-border" aria-hidden />
+                    <span className="font-mono text-[10px] text-muted-foreground/50 uppercase tracking-widest">
+                      {file.type.split('/')[1] ?? 'video'}
+                    </span>
+                  </div>
+                </div>
+
+                {!uploading && !uploaded && (
+                  <button
+                    onClick={handleReset}
+                    className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    aria-label="Remove file"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Uploading — progress shimmer */}
+              {uploading && !uploaded && (
+                <div className="space-y-3 animate-fade-in">
+                  <div className="relative h-1 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full"
+                      style={{
+                        width: '40%',
+                        background: 'linear-gradient(90deg, transparent, var(--color-primary), var(--color-primary), transparent)',
+                        animation: 'scan 1.6s ease-in-out infinite',
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rec-dot inline-block w-1.5 h-1.5 rounded-full bg-primary" aria-hidden />
+                    <p className="font-mono text-[10px] text-muted-foreground tracking-[0.18em] uppercase animate-pulse-soft">
+                      Uploading to engine — standby
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload success */}
+              {uploaded && (
+                <div className="flex items-center gap-3 animate-scale-in">
+                  <Zap className="h-4 w-4 text-success shrink-0" />
+                  <p className="font-mono text-xs text-success tracking-wide">
+                    Intake complete — routing to source detail&hellip;
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/*"
+            className="sr-only"
+            aria-hidden
+            tabIndex={-1}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) validateAndSet(f)
+              e.target.value = ''
+            }}
+          />
+        </div>
+
+        {/* Film perforations — bottom rail */}
+        <div className="bg-surface border border-border rounded-b-xl overflow-hidden">
+          <div className="flex items-center justify-between px-3">
+            <ReelDecoration className="opacity-30 scale-x-[-1]" />
+            <PerforationStrip className="flex-1" />
+            <ReelDecoration className="opacity-30" />
+          </div>
+        </div>
+
+      </div>
+
+      {/* ── CTA row ── */}
+      <div className="pt-5 flex items-center gap-3 stagger-3 animate-fade-in">
+        {!uploaded ? (
+          <Button
+            size="lg"
+            disabled={!canUpload}
+            loading={uploading}
+            onClick={handleUpload}
+            className="gap-2.5 font-display tracking-tight"
+          >
+            {uploading ? 'Processing…' : 'Upload & Process'}
+            {!uploading && <ArrowRight className="h-4 w-4" />}
+          </Button>
         ) : (
-          <Button disabled={!selectedFile && !urlInput.trim()} onClick={tab === 'url' ? handleUrlImport : undefined}>
-            Start Processing <ArrowRight className="h-4 w-4 ml-1" />
+          <Button
+            size="lg"
+            onClick={() => navigate(sourceId ? `/clips/sources/${sourceId}` : '/clips/sources')}
+            className="gap-2 font-display tracking-tight"
+          >
+            View Source <ArrowRight className="h-4 w-4" />
           </Button>
         )}
-        {selectedFile && (
-          <Button variant="ghost" onClick={handleReset} disabled={uploading}>
-            Cancel
+        {hasFile && !uploading && !uploaded && (
+          <Button variant="ghost" size="lg" onClick={handleReset} className="text-muted-foreground">
+            Clear
           </Button>
         )}
       </div>
 
-      {/* Success Banner */}
-      {uploaded && (
-        <Card className="bg-primary-light border-primary/20 animate-slide-up">
-          <CardContent className="p-4 flex items-start gap-3">
-            <div className="p-1 rounded-full bg-primary/10">
-              <Check className="h-4 w-4 text-primary" />
-            </div>
-            <div className="text-sm">
-              <p className="font-medium text-primary">Upload Complete!</p>
-              <p className="text-primary/80 mt-0.5">
-                Your source is being processed. We'll notify you when transcription is complete and clip candidates are ready for review.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ── URL IMPORT — coming soon ── */}
+      <div className="pt-4 stagger-4 animate-fade-in">
+        <div className="relative rounded-xl border border-dashed border-border overflow-hidden">
+          {/* disabled overlay */}
+          <div className="absolute inset-0 bg-background/55 backdrop-blur-[1.5px] pointer-events-none z-10" />
+
+          {/* "OFFLINE" watermark */}
+          <span
+            className="absolute right-3 bottom-2 font-mono text-[9px] text-muted-foreground/25 tracking-[0.22em] uppercase pointer-events-none z-0 select-none"
+            aria-hidden
+          >
+            URL IMPORT / OFFLINE
+          </span>
+
+          <div className="flex items-center gap-3 px-4 py-3.5 opacity-45">
+            <Link className="h-4 w-4 text-muted-foreground shrink-0" />
+            <input
+              type="url"
+              placeholder="https://youtube.com/watch?v=… (coming soon)"
+              disabled
+              className="flex-1 bg-transparent font-mono text-sm text-muted-foreground placeholder:text-muted-foreground/40 focus:outline-none cursor-not-allowed"
+            />
+            <button
+              type="button"
+              onClick={handleUrlComingSoon}
+              disabled
+              className="shrink-0 font-mono text-[10px] tracking-[0.15em] text-muted-foreground uppercase border border-border rounded px-2.5 py-1 pointer-events-auto cursor-not-allowed hover:border-muted-foreground/40 transition-colors"
+              aria-label="URL import coming soon"
+            >
+              Soon
+            </button>
+          </div>
+        </div>
+
+        {/* Helper caption */}
+        <p className="mt-2 font-mono text-[10px] text-muted-foreground/40 tracking-widest text-center uppercase">
+          File upload is the primary intake — URL import ships in v2
+        </p>
+      </div>
+
     </div>
   )
 }

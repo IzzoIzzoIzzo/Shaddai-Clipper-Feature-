@@ -1,186 +1,331 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
-import { cn, formatDuration } from '@/lib/utils'
 import { PLATFORMS } from '@/lib/constants'
-import { ArrowLeft, Check, Sparkles, SlidersHorizontal, Brain } from 'lucide-react'
+import {
+  ArrowLeft,
+  Sparkles,
+  Flame,
+  Clapperboard,
+  ChevronRight,
+} from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useClipsStore } from '@/stores/clipsStore'
+import { CandidateCard } from '@/components/CandidateCard'
 
+// ── platform toggle pill ──────────────────────────────────────
+function PlatformPill({
+  id, label, icon, isSelected, onToggle,
+}: { id: string; label: string; icon: string; isSelected: boolean; onToggle: (id: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(id)}
+      className={cn(
+        'flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all duration-200 font-mono tracking-wide',
+        isSelected
+          ? 'border-primary/70 bg-primary-light text-primary shadow-[0_0_10px_-2px_color-mix(in_srgb,var(--color-primary)_25%,transparent)]'
+          : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+      )}
+    >
+      <span className="text-base leading-none">{icon}</span>
+      <span>{label}</span>
+    </button>
+  )
+}
+
+// ── burn captions toggle ──────────────────────────────────────
+function BurnCaptionsToggle({
+  value, onChange,
+}: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={cn(
+        'flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200 w-full text-left',
+        value
+          ? 'border-secondary/60 bg-secondary-light shadow-[0_0_12px_-4px_color-mix(in_srgb,var(--color-secondary)_30%,transparent)]'
+          : 'border-border hover:border-secondary/40 bg-card'
+      )}
+    >
+      {/* pill toggle switch */}
+      <div
+        className={cn(
+          'relative w-10 h-5 rounded-full transition-colors duration-200 shrink-0',
+          value ? 'bg-secondary' : 'bg-muted'
+        )}
+      >
+        <div
+          className={cn(
+            'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200',
+            value ? 'translate-x-5' : 'translate-x-0.5'
+          )}
+        />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <Flame
+            className={cn('h-4 w-4 shrink-0', value ? 'text-secondary' : 'text-muted-foreground')}
+          />
+          <span className={cn('text-sm font-semibold', value ? 'text-secondary' : 'text-foreground')}>
+            Burn captions into video
+          </span>
+          {value && (
+            <span className="font-mono text-[9px] tracking-widest uppercase px-1.5 py-0.5 rounded bg-secondary/20 text-secondary">
+              ON
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+          Bake TikTok-style animated subtitles directly into the rendered MP4
+        </p>
+      </div>
+    </button>
+  )
+}
+
+// ── page ─────────────────────────────────────────────────────
 export function CandidateReviewPage() {
   const { sourceId } = useParams<{ sourceId: string }>()
   const navigate = useNavigate()
   const addToast = useUIStore((s) => s.addToast)
-  const candidates = useClipsStore((s) => (sourceId ? s.candidates[sourceId] : undefined)) || []
-  const generateClips = useClipsStore((s) => s.generateClips)
-  const setCandidateSelection = useClipsStore((s) => s.setCandidateSelection)
-  const [selected, setSelected] = useState<string[]>(() => candidates.slice(0, 3).map((c) => c.candidateId))
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tiktok', 'reels', 'x'])
 
-  const toggleCandidate = (id: string) => {
-    setSelected((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id])
-  }
+  const candidates = useClipsStore(
+    (s) => (sourceId ? (s.candidates[sourceId] ?? []) : [])
+  )
+  const generateClips  = useClipsStore((s) => s.generateClips)
+  const setCandidateSelection = useClipsStore((s) => s.setCandidateSelection)
+
+  const [selected, setSelected] = useState<string[]>(
+    () => candidates.slice(0, 3).map((c) => c.candidateId)
+  )
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['tiktok', 'reels', 'x'])
+  const [burnCaptions, setBurnCaptions] = useState(false)
+  const [generating, setGenerating] = useState(false)
+
+  // ── helpers ──────────────────────────────────────────────
+  const toggleCandidate = (id: string) =>
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    )
+
+  const togglePlatform = (id: string) =>
+    setSelectedPlatforms((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
 
   const autoSelect = () => {
-    setSelected(candidates.slice(0, 3).map((c) => c.candidateId))
+    const top = [...candidates]
+      .sort((a, b) => b.compositeScore - a.compositeScore)
+      .slice(0, 3)
+      .map((c) => c.candidateId)
+    setSelected(top)
     addToast({ type: 'info', title: 'Top 3 selected', message: 'Auto-selected highest-scoring candidates', duration: 3000 })
   }
 
-  const handleGenerate = () => {
-    if (!sourceId || selected.length === 0) return
-    setCandidateSelection(sourceId, selected)
-    generateClips({ sourceId, candidateIds: selected, platforms: selectedPlatforms })
-      .then((batchId) => {
-        addToast({ type: 'info', title: 'Rendering started', message: `Cutting ${selected.length} clips across ${selectedPlatforms.length} platforms`, duration: 3000 })
-        navigate(`/clips/batches/${batchId}`)
+  const handleGenerate = async () => {
+    if (!sourceId || selected.length === 0 || selectedPlatforms.length === 0) return
+    setGenerating(true)
+    try {
+      setCandidateSelection(sourceId, selected)
+      const batchId = await generateClips({
+        sourceId,
+        candidateIds: selected,
+        platforms: selectedPlatforms,
+        burnCaptions,
       })
-      .catch((err) => addToast({ type: 'error', title: 'Generation failed', message: String(err.message), duration: 5000 }))
+      addToast({
+        type: 'info',
+        title: 'Rendering started',
+        message: `Cutting ${selected.length} clip${selected.length !== 1 ? 's' : ''} across ${selectedPlatforms.length} platform${selectedPlatforms.length !== 1 ? 's' : ''}`,
+        duration: 3000,
+      })
+      navigate(`/clips/batches/${batchId}`)
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Generation failed', message: String(err?.message ?? err), duration: 5000 })
+    } finally {
+      setGenerating(false)
+    }
   }
 
+  const canGenerate = selected.length > 0 && selectedPlatforms.length > 0 && !generating
+
+  // ── empty state ───────────────────────────────────────────
+  if (candidates.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto animate-fade-in">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Source
+        </button>
+        <EmptyState
+          icon={<Clapperboard />}
+          title="No candidates yet"
+          description="The analysis engine hasn't detected any highlight moments yet. Check back once the source has finished processing."
+          action={{ label: 'Back to Source', onClick: () => navigate(-1) }}
+        />
+      </div>
+    )
+  }
+
+  // ── main layout ───────────────────────────────────────────
   return (
-    <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-      <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-        <ArrowLeft className="h-4 w-4" /> Back to Source
+    <div className="max-w-7xl mx-auto animate-fade-in">
+      {/* ── back ── */}
+      <button
+        onClick={() => navigate(-1)}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Source
       </button>
 
-      <div className="flex items-center justify-between">
+      {/* ── page header ── */}
+      <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Clip Candidates</h2>
-          <p className="text-muted-foreground mt-1">Select the best moments to turn into viral clips</p>
+          {/* film-strip accent above heading */}
+          <div className="film-strip w-32 mb-3 rounded-sm" />
+          <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+            THE TABLE
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {candidates.length} candidate{candidates.length !== 1 ? 's' : ''} detected — select the moments worth cutting
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={autoSelect}>
-            <Sparkles className="h-4 w-4" /> Auto-select Top 3
+
+        <div className="flex items-center gap-3">
+          {/* selection counter */}
+          <span className="font-mono text-xs text-muted-foreground">
+            <span className="text-foreground font-semibold">{selected.length}</span>
+            /{candidates.length} selected
+          </span>
+          <Button variant="ghost" size="sm" onClick={autoSelect} className="gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
+            Auto Top 3
           </Button>
         </div>
       </div>
 
-      {/* Candidate Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {candidates.map((candidate, i) => {
-          const isSelected = selected.includes(candidate.candidateId)
-          const scoreColor = candidate.compositeScore >= 0.8
-            ? 'bg-success-light text-success'
-            : candidate.compositeScore >= 0.7
-              ? 'bg-warning-light text-warning'
-              : 'bg-muted text-muted-foreground'
-          return (
-            <Card
-              key={candidate.candidateId}
-              className={cn(
-                'cursor-pointer transition-all card-hover',
-                isSelected && 'ring-2 ring-primary shadow-md',
-                `animate-fade-in stagger-${i + 1}`
-              )}
-              onClick={() => toggleCandidate(candidate.candidateId)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold', scoreColor)}>
-                      {Math.round(candidate.compositeScore * 100)}
-                    </div>
-                    <div className={cn(
-                      'w-5 h-5 rounded border-2 flex items-center justify-center transition-colors',
-                      isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'
-                    )}>
-                      {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-                    </div>
+      {/* ── two-column layout: candidates left, config right ── */}
+      <div className="flex gap-6 items-start">
+
+        {/* ── LEFT: candidate grid ── */}
+        <div className="flex-1 min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {candidates.map((candidate, i) => (
+              <CandidateCard
+                key={candidate.candidateId}
+                candidate={candidate}
+                index={i}
+                isSelected={selected.includes(candidate.candidateId)}
+                onToggle={toggleCandidate}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ── RIGHT: sticky config panel ── */}
+        <div className="w-72 shrink-0 sticky top-6 space-y-4 animate-slide-in-right">
+
+          {/* panel shell */}
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            {/* panel header */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-surface">
+              <Clapperboard className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">Export Config</span>
+            </div>
+
+            <div className="p-4 space-y-5">
+              {/* ── platforms ── */}
+              <div>
+                <p className="text-[10px] font-mono tracking-widest text-muted-foreground uppercase mb-2.5">
+                  Target Platforms
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PLATFORMS.map((p) => (
+                    <PlatformPill
+                      key={p.id}
+                      id={p.id}
+                      label={p.label}
+                      icon={p.icon}
+                      isSelected={selectedPlatforms.includes(p.id)}
+                      onToggle={togglePlatform}
+                    />
+                  ))}
+                </div>
+                {selectedPlatforms.length === 0 && (
+                  <p className="text-[11px] text-danger mt-2">Select at least one platform</p>
+                )}
+              </div>
+
+              {/* divider */}
+              <div className="h-px bg-border" />
+
+              {/* ── burn captions ── */}
+              <div>
+                <p className="text-[10px] font-mono tracking-widest text-muted-foreground uppercase mb-2.5">
+                  Captions
+                </p>
+                <BurnCaptionsToggle value={burnCaptions} onChange={setBurnCaptions} />
+              </div>
+
+              {/* divider */}
+              <div className="h-px bg-border" />
+
+              {/* ── summary ── */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Clips selected</span>
+                  <span className="font-mono font-semibold text-foreground">{selected.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Platforms</span>
+                  <span className="font-mono font-semibold text-foreground">{selectedPlatforms.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Total renders</span>
+                  <span className="font-mono font-semibold text-foreground">
+                    {selected.length * selectedPlatforms.length}
+                  </span>
+                </div>
+                {burnCaptions && (
+                  <div className="flex items-center gap-1.5 mt-1.5 px-2 py-1.5 rounded-lg bg-secondary-light border border-secondary/30">
+                    <Flame className="h-3 w-3 text-secondary shrink-0" />
+                    <span className="text-[11px] text-secondary font-medium">Captions will be baked in</span>
                   </div>
-                  <Badge variant="info" size="sm">{candidate.primaryTopic}</Badge>
-                </div>
-
-                <p className="text-sm mb-3 line-clamp-2 leading-relaxed">{candidate.summarySentence}</p>
-
-                <div className="text-xs text-muted-foreground mb-3 font-mono">
-                  {formatDuration(candidate.startSec)} – {formatDuration(candidate.endSec)}
-                  <span className="text-muted-foreground/50"> ({formatDuration(candidate.durationSec)})</span>
-                </div>
-
-                {/* Signal bars */}
-                <div className="space-y-1.5">
-                  {Object.entries(candidate.signals).map(([key, val]) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground capitalize w-14">{key}</span>
-                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={cn(
-                            'h-full rounded-full transition-all duration-500',
-                            val >= 0.8 ? 'bg-success' : val >= 0.6 ? 'bg-warning' : 'bg-muted-foreground/30'
-                          )}
-                          style={{ width: `${val * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex items-center gap-1 mt-3">
-                  {candidate.speakers.map((s) => (
-                    <Badge key={s} size="sm" variant="default">
-                      Speaker {s}
-                    </Badge>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
-
-      {/* Generation Config */}
-      <Card className="animate-slide-up">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <SlidersHorizontal className="h-4 w-4" /> Generation Settings
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center gap-4">
-            <div>
-              <span className="text-xs text-muted-foreground block mb-1.5">Target Platforms</span>
-              <div className="flex flex-wrap gap-2">
-                {PLATFORMS.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => setSelectedPlatforms((prev) =>
-                      prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]
-                    )}
-                    className={cn(
-                      'px-3 py-1.5 rounded-lg border text-xs transition-all',
-                      selectedPlatforms.includes(p.id)
-                        ? 'border-primary bg-primary-light text-primary font-medium'
-                        : 'border-border text-muted-foreground hover:border-primary/50'
-                    )}
-                  >
-                    {p.icon} {p.label}
-                  </button>
-                ))}
+                )}
               </div>
             </div>
-            <div className="text-xs text-muted-foreground ml-auto flex items-center gap-2">
-              <Brain className="h-3.5 w-3.5" />
-              Selected: <strong>{selected.length}</strong> / {candidates.length} candidates
-            </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Generate */}
-      <div className="flex items-center gap-3 animate-slide-up">
-        <Button
-          size="lg"
-          disabled={selected.length === 0 || selectedPlatforms.length === 0}
-          onClick={handleGenerate}
-        >
-          <Sparkles className="h-5 w-5" />
-          Generate {selected.length} Clips
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          Est. cost: ~${(selected.length * selectedPlatforms.length * 0.03).toFixed(2)}
-        </span>
+          {/* ── GENERATE BUTTON — the only lime fill CTA ── */}
+          <Button
+            size="lg"
+            variant="primary"
+            disabled={!canGenerate}
+            loading={generating}
+            onClick={handleGenerate}
+            className="w-full gap-2.5 text-base font-bold"
+          >
+            {!generating && <ChevronRight className="h-5 w-5" />}
+            Generate {selected.length > 0 ? `${selected.length} ` : ''}Clip{selected.length !== 1 ? 's' : ''}
+          </Button>
+
+          {!canGenerate && !generating && (
+            <p className="text-[11px] text-muted-foreground text-center">
+              {selected.length === 0
+                ? 'Select at least one candidate above'
+                : 'Select at least one platform'}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

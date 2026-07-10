@@ -1,190 +1,262 @@
-import { useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useEffect } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import { Film, Scissors, Clock, Upload, ChevronRight, Clapperboard } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ProgressBar } from '@/components/ui/progress-bar'
-import { formatDuration, formatFileSize, formatDate } from '@/lib/utils'
-import { Upload, Film, Clock, TrendingUp, ArrowRight, Sparkles, BarChart3 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { EmptyState } from '@/components/ui/empty-state'
+import { cn, formatDuration, formatDate } from '@/lib/utils'
 import { useClipsStore } from '@/stores/clipsStore'
+import type { Source } from '@/types/api'
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function statusVariant(status: Source['status']): 'success' | 'danger' | 'info' | 'warning' {
+  if (status === 'ingested') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'normalizing') return 'warning'
+  return 'info'
+}
+
+// ── sub-components ────────────────────────────────────────────────────────────
+
+interface StatCardProps {
+  label: string
+  value: string | number
+  icon: React.ReactNode
+  accentClass: string
+  delay: string
+}
+
+function StatCard({ label, value, icon, accentClass, delay }: StatCardProps) {
+  return (
+    <Card
+      className={cn(
+        'card-hover animate-slide-up relative overflow-hidden',
+        delay,
+      )}
+    >
+      {/* subtle accent stripe at top */}
+      <div className={cn('absolute top-0 left-0 right-0 h-px', accentClass)} />
+      <CardContent className="p-5 flex items-center gap-4">
+        <div className={cn('p-2.5 rounded-lg shrink-0', accentClass.replace('bg-', 'bg-').replace('-foreground', ''))}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="font-display text-3xl font-extrabold leading-none tracking-tight text-foreground">
+            {value}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-mono">
+            {label}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+interface SourceTileProps {
+  source: Source
+  index: number
+}
+
+function SourceTile({ source, index }: SourceTileProps) {
+  const stagger = `stagger-${Math.min(index + 1, 8)}` as const
+
+  return (
+    <Link
+      to={`/clips/sources/${source.sourceId}`}
+      className={cn(
+        'block group animate-scale-in',
+        stagger,
+      )}
+    >
+      <Card className="card-hover h-full cursor-pointer">
+        <CardContent className="p-5 flex flex-col gap-3 h-full">
+          {/* thumbnail placeholder — film-strip motif */}
+          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-surface border border-border">
+            {/* film holes */}
+            <div className="absolute inset-y-0 left-0 w-4 flex flex-col justify-around items-center py-1 gap-1 z-10">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="w-2 h-2 rounded-sm bg-background/70 border border-border/60" />
+              ))}
+            </div>
+            <div className="absolute inset-y-0 right-0 w-4 flex flex-col justify-around items-center py-1 gap-1 z-10">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="w-2 h-2 rounded-sm bg-background/70 border border-border/60" />
+              ))}
+            </div>
+
+            {/* center icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Clapperboard className="w-7 h-7 text-muted-foreground/30 group-hover:text-primary/50 transition-colors duration-300" />
+            </div>
+
+            {/* scanning line on hover for in-progress sources */}
+            {(source.status === 'normalizing' || source.status === 'uploading') && (
+              <div className="absolute inset-0 scan-line" />
+            )}
+          </div>
+
+          {/* info */}
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="font-semibold text-sm leading-snug line-clamp-2 text-foreground group-hover:text-primary transition-colors duration-200">
+              {source.title}
+            </h4>
+            <Badge variant={statusVariant(source.status)} size="sm" className="shrink-0 mt-0.5">
+              {source.status}
+            </Badge>
+          </div>
+
+          {/* meta row */}
+          <div className="flex items-center gap-2 mt-auto font-mono text-[11px] text-muted-foreground">
+            {source.durationSec > 0 && (
+              <>
+                <Clock className="w-3 h-3 shrink-0" />
+                <span>{formatDuration(source.durationSec)}</span>
+                <span className="text-border">·</span>
+              </>
+            )}
+            <span className="truncate">{formatDate(source.createdAt)}</span>
+            <ChevronRight className="w-3 h-3 ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  )
+}
+
+// ── page ─────────────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
   const navigate = useNavigate()
   const sources = useClipsStore((s) => s.sources)
-  const batches = useClipsStore((s) => s.batches)
   const clips = useClipsStore((s) => s.clips)
+  const batches = useClipsStore((s) => s.batches)
+  const ensureSeeded = useClipsStore((s) => s.ensureSeeded)
 
-  const clipUsage = clips.length
-  const clipLimit = 50
+  useEffect(() => {
+    ensureSeeded()
+  }, [ensureSeeded])
+
+  // derived stats
+  const totalSources = sources.length
+  const totalClips = batches.reduce((acc, b) => acc + b.totalClipsGenerated, 0) + clips.length
+  const totalSecProcessed = sources.reduce((acc, src) => acc + (src.durationSec ?? 0), 0)
+
+  // format processed time: prefer minutes if ≥60s, else seconds
+  const processedLabel =
+    totalSecProcessed >= 3600
+      ? `${(totalSecProcessed / 3600).toFixed(1)}h`
+      : totalSecProcessed >= 60
+      ? `${Math.round(totalSecProcessed / 60)}m`
+      : `${Math.round(totalSecProcessed)}s`
+
+  const recentSources = [...sources]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 9)
 
   return (
-    <div className="space-y-8 max-w-6xl">
-      {/* Header */}
-      <div className="flex items-end justify-between animate-fade-in">
-        <div>
-          <p className="font-mono text-[11px] uppercase tracking-[0.32em] text-primary mb-2">● Now Editing</p>
-          <h2 className="font-display text-4xl font-extrabold tracking-tight leading-[0.95]">
-            Cut the <span className="gradient-text">noise.</span><br />Ship the moments.
-          </h2>
-          <p className="text-muted-foreground mt-3 max-w-md">
-            Drop a long-form video — SHADDAI finds the viral moments, writes the hooks, and renders clips for every platform.
-          </p>
-        </div>
-        <Button size="lg" onClick={() => navigate('/clips/upload')} className="shrink-0">
-          <Upload className="h-4 w-4" />
-          New Source
-        </Button>
-      </div>
+    <div className="space-y-10 max-w-6xl">
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-slide-up">
-        <Card className="card-hover stagger-1">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2.5 rounded-lg bg-primary-light">
-              <Film className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{sources.length}</p>
-              <p className="text-xs text-muted-foreground">Sources Uploaded</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="card-hover stagger-2">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2.5 rounded-lg bg-success-light">
-              <TrendingUp className="h-5 w-5 text-success" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{batches.reduce((s, b) => s + b.totalClipsGenerated, 0)}</p>
-              <p className="text-xs text-muted-foreground">Clips Generated</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="card-hover stagger-3">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="p-2.5 rounded-lg bg-warning-light">
-              <Clock className="h-5 w-5 text-warning" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{sources.reduce((s, src) => s + Math.round(src.durationSec / 60), 0)}m</p>
-              <p className="text-xs text-muted-foreground">Total Content Processed</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* ── HERO HEADER ─────────────────────────────────────────────────── */}
+      <header className="animate-fade-in">
+        {/* timecode label */}
+        <p className="font-mono text-[11px] uppercase tracking-[0.32em] text-primary mb-3 flex items-center gap-2">
+          <span className="rec-dot inline-block w-1.5 h-1.5 rounded-full bg-secondary" />
+          Command Deck · {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+        </p>
 
-      {/* Usage */}
-      <Card className="animate-fade-in">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            Monthly Clip Usage
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ProgressBar value={clipUsage} max={clipLimit} showLabel size="lg" className="mb-1" />
-          <p className="text-xs text-muted-foreground">
-            {clipUsage} of {clipLimit} clips used this month (Free tier)
-          </p>
-        </CardContent>
-      </Card>
+        <div className="flex items-end justify-between gap-6 flex-wrap">
+          <div>
+            {/* big numeral anchor */}
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-[5rem] font-black leading-none gradient-text select-none">
+                {String(totalSources).padStart(2, '0')}
+              </span>
+              <div>
+                <h1 className="font-display text-3xl font-extrabold tracking-tight leading-[1.05] text-foreground">
+                  Sources<br />on the table.
+                </h1>
+              </div>
+            </div>
+            <p className="text-muted-foreground mt-3 max-w-md text-sm leading-relaxed">
+              Drop a long-form video — SHADDAI finds the viral moments, writes the hooks,
+              and renders clips ready for every platform.
+            </p>
+          </div>
 
-      {/* Recent Sources */}
-      <section className="animate-slide-up stagger-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Recent Sources</h3>
-          <Button variant="ghost" size="sm" onClick={() => navigate('/clips/sources')}>
-            View All <ArrowRight className="h-4 w-4 ml-1" />
+          <Button size="lg" onClick={() => navigate('/clips/upload')} className="shrink-0 animate-scale-in stagger-3">
+            <Upload className="h-4 w-4" />
+            New Source
           </Button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sources.map((source, i) => (
-            <Card
-              key={source.sourceId}
-              className={cn('cursor-pointer card-hover', `stagger-${i + 1}`)}
-              onClick={() => navigate(`/clips/sources/${source.sourceId}`)}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-sm truncate">{source.title}</h4>
-                    <p className="text-xs text-muted-foreground mt-0.5">{source.originalFilename}</p>
-                  </div>
-                  <Badge variant={source.status === 'ingested' ? 'success' : 'info'} size="sm">
-                    {source.status}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{formatDuration(source.durationSec)}</span>
-                  <span className="text-muted-foreground/40">•</span>
-                  <span>{formatFileSize(source.fileSizeBytes)}</span>
-                  <span className="text-muted-foreground/40">•</span>
-                  <span>{formatDate(source.createdAt)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        {sources.length === 0 && (
-          <Card className="p-12 text-center">
-            <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="text-muted-foreground mb-4">No sources yet. Upload your first video to get started!</p>
-            <Button onClick={() => navigate('/clips/upload')}>Upload Now</Button>
-          </Card>
-        )}
-      </section>
 
-      {/* Recent Batches */}
-      <section className="animate-slide-up stagger-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Recent Generations</h3>
-        </div>
-        {batches.length > 0 ? batches.map((batch) => (
-          <Card key={batch.batchId} className="mb-3 card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <Badge variant={batch.status === 'reviewing' ? 'warning' : 'success'}>
-                    {batch.status}
-                  </Badge>
-                  <span className="text-sm font-medium">{batch.totalClipsGenerated} clips generated</span>
-                  <span className="text-xs text-muted-foreground flex gap-0.5">
-                    {batch.platforms.map((p) => (
-                      <span key={p}>{p === 'tiktok' ? '🎵' : p === 'reels' ? '📸' : p === 'x' ? '🐦' : p === 'linkedin' ? '💼' : '▶️'}</span>
-                    ))}
-                  </span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  ${batch.totalCostUsd.toFixed(2)} — {formatDate(batch.createdAt)}
-                </div>
-              </div>
-              <ProgressBar value={batch.progressPct} showLabel size="sm" />
-              <div className="flex items-center gap-2 mt-3">
-                {batch.clips.map((clip) => (
-                  <Badge key={clip.clipId} variant="default" size="sm" className="max-w-[140px] truncate">
-                    {clip.title}
-                  </Badge>
-                ))}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => navigate(`/clips/batches/${batch.batchId}`)}
-              >
-                View Details
-              </Button>
-            </CardContent>
-          </Card>
-        )) : (
-          <Card className="p-12 text-center">
-            <Sparkles className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-            <p className="text-muted-foreground mb-4">No clip generations yet. Upload a source and generate your first clips!</p>
-            <Button onClick={() => navigate('/clips/upload')}>
-              <Upload className="h-4 w-4" />
-              Upload Source
+        {/* film-strip divider */}
+        <div className="film-strip mt-6 rounded-full" />
+      </header>
+
+      {/* ── STAT CARDS ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          label="Sources Uploaded"
+          value={totalSources}
+          icon={<Film className="h-5 w-5 text-primary" />}
+          accentClass="bg-primary-light"
+          delay="stagger-1"
+        />
+        <StatCard
+          label="Clips Generated"
+          value={totalClips}
+          icon={<Scissors className="h-5 w-5 text-success" />}
+          accentClass="bg-success-light"
+          delay="stagger-2"
+        />
+        <StatCard
+          label="Content Processed"
+          value={processedLabel || '0s'}
+          icon={<Clock className="h-5 w-5 text-warning" />}
+          accentClass="bg-warning-light"
+          delay="stagger-3"
+        />
+      </div>
+
+      {/* ── RECENT SOURCES GRID ─────────────────────────────────────────── */}
+      <section className="animate-slide-up stagger-4">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-display text-xl font-bold tracking-tight text-foreground">
+            Recent Sources
+          </h2>
+          {sources.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/clips/sources')}
+            >
+              View All
+              <ChevronRight className="h-3.5 w-3.5" />
             </Button>
+          )}
+        </div>
+
+        {recentSources.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={<Clapperboard />}
+              title="The table is clean."
+              description="Feed it something. Drop a long-form video and SHADDAI will find every viral moment inside."
+              action={{
+                label: 'Upload Source',
+                onClick: () => navigate('/clips/upload'),
+              }}
+            />
           </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {recentSources.map((source, i) => (
+              <SourceTile key={source.sourceId} source={source} index={i} />
+            ))}
+          </div>
         )}
       </section>
     </div>

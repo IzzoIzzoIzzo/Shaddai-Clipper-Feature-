@@ -116,6 +116,7 @@ export interface Clip {
     brand: string[]
   }
   platformAssets: Record<string, PlatformAsset>
+  coverUrl?: string
   status: 'draft' | 'reviewed' | 'approved' | 'exported' | 'archived'
   brandProfileId?: string
   createdAt: string

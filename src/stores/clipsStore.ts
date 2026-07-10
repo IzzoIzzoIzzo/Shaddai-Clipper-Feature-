@@ -14,7 +14,11 @@ import type {
 
 const API = '/api/clips/v1'
 
-interface GenerateArgs { sourceId: string; candidateIds: string[]; platforms: string[]; brandProfileId?: string }
+interface GenerateArgs { sourceId: string; candidateIds: string[]; platforms: string[]; brandProfileId?: string; burnCaptions?: boolean }
+
+// Direct download URLs for the transcript (served by the engine / vite proxy).
+export const transcriptSrtUrl = (sourceId: string) => `${API}/sources/${sourceId}/transcript.srt`
+export const transcriptTxtUrl = (sourceId: string) => `${API}/sources/${sourceId}/transcript.txt`
 
 interface ClipsState {
   sources: Source[]
@@ -32,6 +36,7 @@ interface ClipsState {
   importUrl: (url: string) => Promise<string>
   deleteSource: (sourceId: string) => void
   setCandidateSelection: (sourceId: string, candidateIds: string[]) => void
+  updateTranscript: (sourceId: string, segments: TranscriptSegment[]) => Promise<void>
   generateClips: (args: GenerateArgs) => Promise<string>
   updateClip: (clipId: string, patch: Partial<Clip>) => void
   rateClip: (clipId: string, rating: number) => void
@@ -62,14 +67,37 @@ function mapCandidate(c: any): ClipCandidate {
     summarySentence: c.summarySentence || '', status: c.status || 'pending', transcriptExcerpt: c.transcriptExcerpt,
   }
 }
+// Real engine segments are lean ({startSec,endSec,text}). The UI type expects
+// id/speaker/topics/emotion/confidence — fill sane defaults so pages that read
+// those fields (e.g. seg.topics.map) never crash on real data.
+function mapSegment(s: any, i: number): TranscriptSegment {
+  return {
+    id: s.id || String(i + 1),
+    startSec: s.startSec || 0,
+    endSec: s.endSec || 0,
+    speaker: s.speaker || 'A',
+    text: s.text || '',
+    topics: Array.isArray(s.topics) ? s.topics : [],
+    emotion: s.emotion || 'neutral',
+    confidence: typeof s.confidence === 'number' ? s.confidence : 0.9,
+  }
+}
 function mapClip(c: any, sourceId: string, batchId: string): Clip {
+  // The engine returns platformAssets as { platform: "/files/…mp4" } (a URL
+  // string). The UI type is { platform: { videoUrl } } — normalize so pages can
+  // read platformAssets[p].videoUrl reliably (also accepts already-object form).
+  const platformAssets: Record<string, any> = {}
+  for (const [p, v] of Object.entries(c.platformAssets || {})) {
+    platformAssets[p] = typeof v === 'string' ? { videoUrl: v } : v
+  }
+  const narr = c.narration || {}
   return {
     clipId: c.clipId, sourceId, batchId, userRating: null, title: c.title || 'Clip',
     startSec: c.startSec || 0, endSec: c.endSec || 0, durationSec: c.durationSec || 0, compositeScore: c.compositeScore || 0,
-    hooks: {}, // hooks/captions need the LLM agents (deferred) — summary used as caption below
-    captions: { primary: c.summarySentence || '', secondary: '' },
-    hashtags: { core: [], niche: [], brand: [] },
-    platformAssets: c.platformAssets || {}, status: c.status || 'draft',
+    hooks: narr.hook ? { curiosity: narr.hook } : {},
+    captions: { primary: narr.caption || c.summarySentence || '', secondary: '' },
+    hashtags: { core: narr.hashtags || [], niche: [], brand: [] },
+    platformAssets, coverUrl: c.coverUrl, status: c.status || 'draft',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   }
 }
@@ -126,8 +154,19 @@ export const useClipsStore = create<ClipsState>()(
         set((st) => ({ candidates: { ...st.candidates, [sourceId]: (st.candidates[sourceId] || []).map((c) => ({ ...c, status: candidateIds.includes(c.candidateId) ? 'selected' : 'pending' })) } }))
       },
 
-      generateClips: async ({ sourceId, candidateIds, platforms }) => {
-        const { batchId } = await jpost('/generate', { sourceId, candidateIds, platforms })
+      updateTranscript: async (sourceId, segments) => {
+        // Optimistic: update locally, then persist to the engine.
+        set((st) => ({ transcripts: { ...st.transcripts, [sourceId]: segments } }))
+        try {
+          await fetch(API + '/sources/' + sourceId + '/transcript', {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ segments: segments.map((s) => ({ startSec: s.startSec, endSec: s.endSec, text: s.text })) }),
+          })
+        } catch { /* local copy already updated; engine is best-effort */ }
+      },
+
+      generateClips: async ({ sourceId, candidateIds, platforms, burnCaptions }) => {
+        const { batchId } = await jpost('/generate', { sourceId, candidateIds, platforms, burnCaptions: !!burnCaptions })
         const batch: GenerationBatch = { batchId, sourceId, totalClipsRequested: candidateIds.length, totalClipsGenerated: 0, platforms, status: 'queued', progressPct: 0, currentStage: 'queued', totalCostUsd: 0, aiTokensUsed: 0, processingDurationSec: 0, clips: [], createdAt: new Date().toISOString(), completedAt: null }
         set((st) => ({ batches: [batch, ...st.batches] }))
         pollBatch(batchId, set, get)
@@ -161,7 +200,7 @@ function pollSource(sourceId: string, set: any, get: () => ClipsState) {
       const src = mapSource(d.source)
       set((st: ClipsState) => ({
         sources: st.sources.map((s) => s.sourceId === sourceId ? src : s),
-        transcripts: { ...st.transcripts, [sourceId]: (d.transcript || []) },
+        transcripts: { ...st.transcripts, [sourceId]: (d.transcript || []).map(mapSegment) },
         candidates: { ...st.candidates, [sourceId]: (d.candidates || []).map(mapCandidate) },
       }))
       if (src.status === 'ingested' || src.status === 'failed') { clearInterval(sourceTimers[sourceId]); delete sourceTimers[sourceId] }
