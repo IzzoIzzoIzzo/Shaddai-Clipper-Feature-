@@ -19,6 +19,8 @@ export interface Source {
   }
   thumbnailUrls: Record<string, string>
   status: 'uploading' | 'ingested' | 'normalizing' | 'normalized' | 'failed'
+  stage?: string
+  progressPct?: number
   transcriptId?: string
   errorMessage?: string
   createdAt: string

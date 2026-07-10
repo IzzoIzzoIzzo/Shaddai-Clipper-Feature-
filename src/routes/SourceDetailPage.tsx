@@ -133,8 +133,30 @@ export function SourceDetailPage() {
                 <Loader2 className="h-6 w-6 text-primary animate-spin" />
               </div>
               <p className="font-display text-base font-semibold text-foreground mb-2">
-                {processingMessage[source.status] ?? 'Processing…'}
+                {source.stage === 'detecting' ? 'Detecting highlights…' : processingMessage[source.status] ?? 'Processing…'}
               </p>
+
+              {/* live transcription progress (long videos process in windows) */}
+              {source.status === 'normalizing' && typeof source.progressPct === 'number' && (
+                <div className="max-w-sm mx-auto mt-4 mb-3">
+                  <div className="flex items-center justify-between mb-1.5 font-mono text-[11px] text-muted-foreground">
+                    <span>{source.stage === 'detecting' ? 'DETECTING' : 'TRANSCRIBING'}</span>
+                    <span className="text-primary tabular-nums">{source.progressPct}%</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-500"
+                      style={{ width: `${Math.max(3, source.progressPct)}%` }}
+                    />
+                  </div>
+                  {source.durationSec > 240 && (
+                    <p className="text-[10px] text-muted-foreground/70 font-mono mt-2">
+                      {Math.round(source.durationSec / 60)}-min source — transcription runs on-device and can take a few minutes.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <p className="text-xs text-muted-foreground font-mono">
                 This page refreshes automatically when processing completes.
               </p>

@@ -55,7 +55,8 @@ function mapSource(s: any): Source {
     sourceId: s.sourceId, title: s.title || 'Source', originalFilename: s.originalFilename || '',
     fileSizeBytes: s.fileSizeBytes || 0, durationSec: s.durationSec || 0, mimeType: s.mimeType || 'video/mp4',
     metadata: { codec: 'h264', resolution: '—', bitrate: 0, fps: 0, channels: s.metadata?.channels || 2 },
-    thumbnailUrls: {}, status: (s.status as Source['status']) || 'normalizing', transcriptId: s.transcriptId,
+    thumbnailUrls: {}, status: (s.status as Source['status']) || 'normalizing',
+    stage: s.stage, progressPct: typeof s.progressPct === 'number' ? s.progressPct : undefined, transcriptId: s.transcriptId,
     errorMessage: s.errorMessage, createdAt: s.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
   }
 }

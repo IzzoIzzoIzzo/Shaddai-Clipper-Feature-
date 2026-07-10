@@ -17,10 +17,11 @@ export interface Segment {
   speaker?: string
 }
 
-// Default to base.en for clearly better accuracy than tiny.en. Override with
-// WHISPER_MODEL (e.g. 'Xenova/whisper-tiny.en' on RAM-constrained hosts like
-// Render free tier, or 'Xenova/whisper-small.en' for even higher accuracy).
-const MODEL = process.env.WHISPER_MODEL || 'Xenova/whisper-base.en'
+// tiny.en is the default — it is ~3-5x faster than base.en on CPU, which matters
+// a lot for real long-form videos (a 25-min upload is unusable on base.en/CPU).
+// Override with WHISPER_MODEL='Xenova/whisper-base.en' (or small.en) for higher
+// accuracy on shorter clips or when a GPU is available.
+const MODEL = process.env.WHISPER_MODEL || 'Xenova/whisper-tiny.en'
 
 // lazy singleton — the model load is expensive, do it once
 let _asr: any = null
@@ -38,25 +39,57 @@ export async function getTranscriber() {
   return _loading
 }
 
-/** Transcribe 16kHz mono Float32 PCM into timestamped segments. */
-export async function transcribePCM(samples: Float32Array): Promise<Segment[]> {
+const SR = 16000
+const WINDOW_SEC = 120 // transcribe long audio in 2-min windows (progress + bounded memory)
+
+function mapChunks(chunks: any[], offsetSec: number): Segment[] {
+  return chunks
+    .map((c) => ({
+      startSec: Number(c.timestamp?.[0] ?? 0) + offsetSec,
+      endSec: Number(c.timestamp?.[1] ?? (Number(c.timestamp?.[0] ?? 0) + 2)) + offsetSec,
+      text: String(c.text || '').trim(),
+    }))
+    .filter((s) => s.text.length > 0)
+}
+
+/**
+ * Transcribe 16kHz mono Float32 PCM into timestamped segments.
+ * For long audio, runs in WINDOW_SEC slices so we can report progress and keep
+ * each model call bounded — a 25-min upload no longer looks frozen. `onProgress`
+ * receives a 0..1 fraction after each window.
+ */
+export async function transcribePCM(
+  samples: Float32Array,
+  onProgress?: (frac: number) => void,
+): Promise<Segment[]> {
   const asr = await getTranscriber()
-  const out: any = await asr(samples, {
-    return_timestamps: true,
-    chunk_length_s: 30,
-    stride_length_s: 5,
-  })
-  const chunks: any[] = out?.chunks || []
-  if (chunks.length) {
-    return chunks
-      .map((c) => ({
-        startSec: Number(c.timestamp?.[0] ?? 0),
-        endSec: Number(c.timestamp?.[1] ?? (Number(c.timestamp?.[0] ?? 0) + 2)),
-        text: String(c.text || '').trim(),
-      }))
-      .filter((s) => s.text.length > 0)
+  const opts = { return_timestamps: true, chunk_length_s: 30, stride_length_s: 5 }
+  const WIN = WINDOW_SEC * SR
+
+  // Short clip → single pass.
+  if (samples.length <= WIN) {
+    const out: any = await asr(samples, opts)
+    onProgress?.(1)
+    const chunks: any[] = out?.chunks || []
+    if (chunks.length) return mapChunks(chunks, 0)
+    const text = String(out?.text || '').trim()
+    return text ? [{ startSec: 0, endSec: samples.length / SR, text }] : []
   }
-  // no timestamps returned — single block
-  const text = String(out?.text || '').trim()
-  return text ? [{ startSec: 0, endSec: samples.length / 16000, text }] : []
+
+  // Long audio → sliding windows with progress.
+  const segments: Segment[] = []
+  for (let start = 0; start < samples.length; start += WIN) {
+    const end = Math.min(start + WIN, samples.length)
+    const slice = samples.subarray(start, end)
+    const offset = start / SR
+    const out: any = await asr(slice, opts)
+    const chunks: any[] = out?.chunks || []
+    if (chunks.length) segments.push(...mapChunks(chunks, offset))
+    else {
+      const text = String(out?.text || '').trim()
+      if (text) segments.push({ startSec: offset, endSec: end / SR, text })
+    }
+    onProgress?.(Math.min(1, end / samples.length))
+  }
+  return segments
 }

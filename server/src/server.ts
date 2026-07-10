@@ -26,7 +26,7 @@ await mkdir(DATA, { recursive: true })
 
 // ── in-memory state (single-user engine) ──
 type Status = 'uploading' | 'normalizing' | 'ingested' | 'failed'
-interface Source { sourceId: string; title: string; originalFilename: string; durationSec: number; status: Status; transcriptId?: string; errorMessage?: string; createdAt: string }
+interface Source { sourceId: string; title: string; originalFilename: string; durationSec: number; status: Status; stage?: string; progressPct?: number; transcriptId?: string; errorMessage?: string; createdAt: string }
 interface Candidate { candidateId: string; startSec: number; endSec: number; durationSec: number; compositeScore: number; signals: { linguistic: number; audio: number; sentiment: number; qa: number }; primaryTopic: string; summarySentence: string; transcriptExcerpt: string; status: string }
 interface Batch { batchId: string; sourceId: string; status: string; progressPct: number; currentStage: string; totalClipsRequested: number; totalClipsGenerated: number; platforms: string[]; burnCaptions: boolean; clips: any[]; createdAt: string; completedAt: string | null }
 
@@ -149,10 +149,13 @@ async function processSource(sourceId: string) {
     if (!meta.hasAudio) throw new Error('No audio track detected')
 
     const pcm = await extractPCM16k(input)
-    const segs = await transcribePCM(pcm)
+    src.stage = 'transcribing'; src.progressPct = 0
+    const segs = await transcribePCM(pcm, (frac) => { src.progressPct = Math.round(frac * 100) })
     transcripts.set(sourceId, segs)
+    src.stage = 'detecting'
     candidates.set(sourceId, buildCandidates(segs, pcm))
     src.transcriptId = randomUUID()
+    src.stage = 'done'; src.progressPct = 100
     src.status = 'ingested'
     console.log(`[clips] source ${sourceId} ingested — ${segs.length} segments, ${candidates.get(sourceId)!.length} candidates`)
   } catch (e: any) {
