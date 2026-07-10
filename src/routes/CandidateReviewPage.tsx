@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -99,6 +99,10 @@ export function CandidateReviewPage() {
   )
   const generateClips  = useClipsStore((s) => s.generateClips)
   const setCandidateSelection = useClipsStore((s) => s.setCandidateSelection)
+  const loadSourceDetail = useClipsStore((s) => s.loadSourceDetail)
+
+  // Fetch candidates on mount (covers direct nav / reload).
+  useEffect(() => { if (sourceId) loadSourceDetail(sourceId) }, [sourceId, loadSourceDetail])
 
   const [selected, setSelected] = useState<string[]>(
     () => candidates.slice(0, 3).map((c) => c.candidateId)

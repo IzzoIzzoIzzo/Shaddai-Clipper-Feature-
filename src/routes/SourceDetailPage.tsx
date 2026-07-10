@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Sparkles, FileVideo, Loader2, FolderOpen,
@@ -38,6 +39,11 @@ export function SourceDetailPage() {
   const navigate = useNavigate()
   const source = useClipsStore((s) => s.sources.find((x) => x.sourceId === sourceId))
   const segments = useClipsStore((s) => (sourceId ? s.transcripts[sourceId] : undefined)) ?? []
+  const loadSourceDetail = useClipsStore((s) => s.loadSourceDetail)
+
+  // Fetch transcript + candidates on mount (covers direct nav / reload where the
+  // upload poller never ran, so the transcript panel isn't empty).
+  useEffect(() => { if (sourceId) loadSourceDetail(sourceId) }, [sourceId, loadSourceDetail])
 
   // ── Back nav ──
   const BackLink = () => (

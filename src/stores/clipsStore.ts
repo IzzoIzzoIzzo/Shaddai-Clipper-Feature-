@@ -31,6 +31,7 @@ interface ClipsState {
   engineOnline: boolean | null
 
   ensureSeeded: () => void          // → loads live sources + engine health
+  loadSourceDetail: (sourceId: string) => void  // → fetch transcript + candidates on demand
   resumePipelines: () => void       // → re-arm polling for in-flight items
   uploadSource: (file: File) => Promise<string>
   importUrl: (url: string) => Promise<string>
@@ -116,6 +117,23 @@ export const useClipsStore = create<ClipsState>()(
           const d = await jget('/sources')
           set({ sources: (d.sources || []).map(mapSource) })
         } catch { set({ engineOnline: false }) }
+      },
+
+      // Fetch a single source's transcript + candidates on demand (direct nav /
+      // reload where the poller never ran). If it's still processing, arm polling.
+      loadSourceDetail: async (sourceId) => {
+        try {
+          const d = await jget('/sources/' + sourceId)
+          const src = mapSource(d.source)
+          set((st) => ({
+            sources: st.sources.some((s) => s.sourceId === sourceId)
+              ? st.sources.map((s) => (s.sourceId === sourceId ? src : s))
+              : [src, ...st.sources],
+            transcripts: { ...st.transcripts, [sourceId]: (d.transcript || []).map(mapSegment) },
+            candidates: { ...st.candidates, [sourceId]: (d.candidates || []).map(mapCandidate) },
+          }))
+          if (src.status === 'uploading' || src.status === 'normalizing') pollSource(sourceId, set, get)
+        } catch { /* engine offline — page shows its empty state */ }
       },
 
       resumePipelines: () => {
