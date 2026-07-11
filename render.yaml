@@ -1,36 +1,94 @@
-# Render deployment for the SHADDAI Clipper (engine + built UI in one web service).
-# The engine binds process.env.PORT and serves the built dist/, so one service
-# hosts both the API (/api/clips/v1, /files) and the UI.
+# Render blueprint — SHADDAI Clipper (engine + built UI in one web service).
 #
-# Deploy: push this repo to GitHub, then in Render → New → Blueprint → pick this repo.
+# Architecture: single Node.js web service.
+#   Build step  → installs frontend deps, builds dist/, installs server deps.
+#   Start step  → engine runs from server/ so ../dist resolves to the built UI.
+#   One URL hosts the full app: API (/api/clips/v1), clip files (/files/), and the React UI (/).
+#
+# Deploy: push repo to GitHub → Render → New → Blueprint → pick this repo.
+# Render reads this file and wires everything automatically.
+
 services:
   - type: web
     name: shaddai-clipper
     runtime: node
-    plan: starter            # free tier (512MB) OOMs on Whisper — starter has 512MB→ use standard if you process long videos
+    # Standard (2 GB RAM) is strongly recommended.
+    # Whisper tiny.en loads a ~40 MB ONNX model into memory; add ffmpeg decode
+    # buffers for the video being processed and you need headroom well above 512 MB.
+    # Starter (512 MB) will OOM on real videos — use it only to confirm the service boots.
+    plan: standard
     region: oregon
     branch: main
-    # build: install frontend deps, build dist/, install engine deps
+
+    # Build order:
+    #   1. npm install          — frontend deps (react, vite, tailwind, etc.)
+    #   2. npm run build        — tsc -b && vite build → produces dist/
+    #   3. npm --prefix server install — server deps (fastify, transformers.js, ffmpeg-static, tsx)
     buildCommand: npm install && npm run build && npm --prefix server install
-    # start: run the engine FROM server/ so it finds ../dist and ./data
-    startCommand: cd server && node --import tsx/esm src/server.ts
+
+    # Start from the server/ directory so that:
+    #   • process.cwd() = /opt/render/project/src/server
+    #   • ../dist resolves to the built frontend (served by @fastify/static)
+    #   • ./data (or DATA_DIR) is the default clip-output folder
+    # Uses server/package.json "start" script: node --import tsx/esm src/server.ts
+    startCommand: npm --prefix server start
+
     healthCheckPath: /api/clips/v1/health
+
     envVars:
+      # Render injects PORT automatically — the engine binds it on 0.0.0.0.
+      # Do NOT hardcode PORT here; leave Render in control.
+
       - key: NODE_VERSION
         value: "20"
+
+      # Clip output directory — must match the disk mountPath below.
+      # Without the disk, DATA_DIR still works but files are lost on restart/redeploy.
+      - key: DATA_DIR
+        value: /var/data
+
+      # Whisper model. tiny.en (~40 MB) is the default in transcribe.ts.
+      # On Standard plan you can bump to Xenova/whisper-base.en for better accuracy.
       - key: WHISPER_MODEL
-        value: Xenova/whisper-tiny.en   # smallest/fastest; bump to base.en if you upgrade the plan
-      # Optional — enable AI covers + better narration (leave unset to run free/deterministic):
+        value: Xenova/whisper-tiny.en
+
+      # Concurrency cap. Whisper + ffmpeg are CPU-bound; 2 parallel jobs is safe
+      # on Standard. Raise to 3-4 only after load-testing.
+      - key: MAX_JOBS
+        value: "2"
+
+      # Upload size cap in MB. 300 MB keeps memory pressure reasonable on Standard.
+      # The server default is 1024 MB — override here to be safe.
+      - key: MAX_UPLOAD_MB
+        value: "300"
+
+      # HuggingFace model cache directory — must be writable on Render.
+      # Defaults to node_modules/.cache which is ephemeral and rebuilt each deploy.
+      # Pointing it at /var/data/hf-cache (on the persistent disk) avoids re-downloading
+      # the 40 MB tiny.en model on every deploy.
+      - key: HF_HOME
+        value: /var/data/hf-cache
+
+      # Optional — HuggingFace API token.
+      # Only required for gated models. tiny.en and base.en are public; leave unset.
       - key: HF_TOKEN
         sync: false
+
+      # Optional — AI-generated thumbnail covers via HF FLUX.
+      # Set to "on" together with HF_TOKEN to enable. Default off uses a real video frame.
       - key: COVERS
         value: "off"
-      # Optional — point narration at an LLM (else deterministic fallbacks):
+
+      # Optional — OpenAI key for richer AI-written hooks/captions.
+      # Leave unset to use the built-in deterministic narration fallback (no API key needed).
       - key: OPENAI_API_KEY
         sync: false
-    # Persistent storage for rendered clips (optional; without it clips are download-now only).
-    # Uncomment to keep clips across restarts (paid add-on):
-    # disk:
-    #   name: clipper-data
-    #   mountPath: /opt/render/project/src/server/data
-    #   sizeGB: 5
+
+    # Persistent disk — rendered MP4s live here across restarts and redeploys.
+    # Without this disk, clips are download-immediately-or-lose-them (ephemeral /tmp).
+    # 10 GB handles roughly 500–1000 processed videos before you need to purge old jobs.
+    # Render bills this separately (~$1.50/GB/mo on pay-as-you-go).
+    disk:
+      name: clipper-data
+      mountPath: /var/data
+      sizeGB: 10

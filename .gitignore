@@ -8,3 +8,10 @@ _verify_out.mp4
 
 # local verification artifacts
 .shots/
+
+# stray root-level test media (do not commit large binaries)
+/*.mp4
+/*.mov
+/*.jpg
+/*.jpeg
+shaddai-media-architecture-guide.md

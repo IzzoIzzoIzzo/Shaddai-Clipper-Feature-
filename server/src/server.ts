@@ -20,6 +20,7 @@ import { aura } from './aura.ts'
 import { narrate } from './narrate.ts'
 import { generateCover } from './images.ts'
 import { dedupeText } from './clean.ts'
+import { clipsToAssets } from './asset-manifest.ts'
 
 const DATA = process.env.DATA_DIR || join(process.cwd(), 'data')
 await mkdir(DATA, { recursive: true })
@@ -361,6 +362,15 @@ app.get('/api/clips/v1/batches/:id', async (req, reply) => {
 })
 
 app.get('/api/clips/v1/aura/stats', async () => ({ aura: aura.stats() }))
+
+// ── gallery federation endpoint ──────────────────────────────────────────────
+// Returns all rendered clips in the shared MediaAsset shape so the SHADDAI
+// dashboard can merge them into its unified gallery. HTTP is the source of
+// truth; postMessage is only used to signal "refetch" (see src/lib/parentBridge).
+app.get('/api/clips/v1/gallery', async (_req, reply) => {
+  reply.header('Access-Control-Allow-Origin', '*')
+  return { assets: clipsToAssets(batches.values()) }
+})
 
 // helpers
 function clamp(n: number) { return Math.max(0, Math.min(1, n)) }

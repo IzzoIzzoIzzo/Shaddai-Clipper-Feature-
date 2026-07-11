@@ -11,6 +11,7 @@ import { persist } from 'zustand/middleware'
 import type {
   Source, TranscriptSegment, ClipCandidate, Clip, GenerationBatch, BrandProfile, ClipExport,
 } from '@/types/api'
+import { sendToParent } from '@/lib/parentBridge'
 
 const API = '/api/clips/v1'
 
@@ -273,7 +274,14 @@ function pollBatch(batchId: string, set: any, get: () => ClipsState) {
         } : x),
         clips: [...newClips, ...st.clips.filter((c) => c.batchId !== batchId)],
       }))
-      if (b.status === 'reviewing' || b.status === 'completed' || b.status === 'failed') { clearInterval(batchTimers[batchId]); delete batchTimers[batchId] }
+      if (b.status === 'reviewing' || b.status === 'completed' || b.status === 'failed') {
+        clearInterval(batchTimers[batchId]); delete batchTimers[batchId]
+        // Notify the parent dashboard exactly once when the batch finishes so it
+        // can refetch /api/clips/v1/gallery and merge new assets. No-op outside iframe.
+        if (b.status !== 'failed') {
+          sendToParent({ type: 'clipper:batchComplete', payload: { batchId, sourceId: b.sourceId } })
+        }
+      }
     } catch { /* keep polling */ }
   }, 1500)
 }
