@@ -12,9 +12,9 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D18-339933?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Self-Hosted](https://img.shields.io/badge/self--hosted-yes-9b5de5?style=for-the-badge)](#quickstart)
 [![No API Key](https://img.shields.io/badge/API%20key-not%20required-00b4d8?style=for-the-badge)](#features)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-f77f00?style=for-the-badge)](https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-f77f00?style=for-the-badge)](https://github.com/IzzoSol/Shaddai-Clipper-Feature-/pulls)
 
-[**𝕏 @shaddaiAI**](https://x.com/shaddaiAI) · [**Built by @IzzoSol**](https://x.com/IzzoSol) · [**SHADDAI Platform**](https://github.com/IzzoIzzoIzzo/Shaddai)
+[**𝕏 @shaddaiAI**](https://x.com/shaddaiAI) · [**Built by @IzzoSol**](https://x.com/IzzoSol) · [**SHADDAI Platform**](https://shaddai-g81x.onrender.com)
 
 </div>
 
@@ -24,7 +24,7 @@
 
 Paid clipping tools (Opus Clip, Vizard, Munch) charge $30–$100/month, upload your footage to their servers, and lock finished clips behind a paywall. If you post regularly — podcasts, interviews, long-form tutorials — those costs compound fast and your raw footage leaves your control.
 
-SHADDAI Clipper is the engine that powers the Media Studio inside [SHADDAI](https://github.com/IzzoIzzoIzzo/Shaddai). Extracted here as a standalone MIT tool: same real pipeline, zero subscription, runs entirely on your hardware.
+SHADDAI Clipper is the engine that powers the Media Studio inside [SHADDAI](https://shaddai-g81x.onrender.com). Extracted here as a standalone MIT tool: same real pipeline, zero subscription, runs entirely on your hardware.
 
 ---
 
@@ -62,7 +62,7 @@ SHADDAI Clipper is the engine that powers the Media Studio inside [SHADDAI](http
 
 - **Free during beta.** Usage-credit plumbing (balance, spend, gating) is built in but runs **unlimited and free** while in beta — flip a single flag to switch on billing later. No card, no limits today.
 
-- **Gallery federation.** A `GET /api/clips/v1/gallery` endpoint returns all rendered clips in a standard `MediaAsset` shape so the [SHADDAI dashboard](https://github.com/IzzoIzzoIzzo/Shaddai) can surface them in its unified media gallery.
+- **Gallery federation.** A `GET /api/clips/v1/gallery` endpoint returns all rendered clips in a standard `MediaAsset` shape so the [SHADDAI dashboard](https://shaddai-g81x.onrender.com) can surface them in its unified media gallery.
 
 ---
 
@@ -107,7 +107,7 @@ First run builds the app (about one minute). After that, the engine is live at `
 
 ```bash
 # Clone
-git clone https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-.git
+git clone https://github.com/IzzoSol/Shaddai-Clipper-Feature-.git
 cd Shaddai-Clipper-Feature-
 
 # Install deps
@@ -235,7 +235,7 @@ npm run build
 
 **If this saves you a Opus Clip subscription, consider starring the repo — it helps others find it.**
 
-[![Star this repo](https://img.shields.io/github/stars/IzzoIzzoIzzo/Shaddai-Clipper-Feature-?style=social)](https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-)
+[![Star this repo](https://img.shields.io/github/stars/IzzoSol/Shaddai-Clipper-Feature-?style=social)](https://github.com/IzzoSol/Shaddai-Clipper-Feature-)
 
 ---
 
@@ -243,9 +243,9 @@ npm run build
 
 | Repo | What |
 |---|---|
-| [**Shaddai**](https://github.com/IzzoIzzoIzzo/Shaddai) | The sovereign AI agent empire — 7 agents, 200+ real tools |
-| [**aura**](https://github.com/IzzoIzzoIzzo/aura) | Zero-dep LLM token-saver · CLI + MCP server + library |
-| [**Shaddai-Clipper-Feature-**](https://github.com/IzzoIzzoIzzo/Shaddai-Clipper-Feature-) | *(this)* Long video → captioned vertical shorts |
+| [**Shaddai**](https://shaddai-g81x.onrender.com) | The sovereign AI agent empire — 7 agents, 200+ real tools |
+| [**aura**](https://github.com/IzzoSol/aura) | Zero-dep LLM token-saver · CLI + MCP server + library |
+| [**Shaddai-Clipper-Feature-**](https://github.com/IzzoSol/Shaddai-Clipper-Feature-) | *(this)* Long video → captioned vertical shorts |
 
 ---
 
